@@ -113,24 +113,28 @@ static void render_network_menu(void)
         make_center_label(s_content, line, 0, 2 + (int)i * 14, INNER_W,
                           &lv_font_unscii_8, UI_PAPER);
     }
-    const char *titles[] = {"WI-FI SETUP", "RETRY WI-FI",
-        pdkpass_reminder_enabled() ? "ALERTS: ON" : "ALERTS: OFF", "BACK"};
-    for (unsigned i = 0; i < 4U; i++) {
+    const char *titles[PDKPASS_NETWORK_ITEMS] = {"WI-FI SETUP", "RETRY WI-FI",
+        pdkpass_reminder_enabled() ? "ALERTS: ON" : "ALERTS: OFF",
+        pdkpass_sound_key_enabled() ? "KEY SOUND: ON" : "KEY SOUND: OFF",
+        "BACK"};
+    for (unsigned i = 0; i < PDKPASS_NETWORK_ITEMS; i++) {
         bool selected = s_state.network_selection == i;
         uint32_t ink = selected ? UI_INK : UI_SKY_DARK;
-        lv_obj_t *card = make_card(s_content, 5, 59 + (int)i * 30, 200, 28,
+        // Five rows share the fixed-height menu: a slightly shorter card and
+        // gap keep every row and the hint inside the 191 px content area.
+        lv_obj_t *card = make_card(s_content, 5, 55 + (int)i * 27, 200, 25,
                                    selected ? UI_YELLOW : UI_PAPER, 2);
         s_network_cards[i] = card;
         // One centered action per card leaves vertical padding and a clear
-        // gap between four rows in the fixed-height menu.
-        make_center_label(card, titles[i], 2, 5, 192, &lv_font_unscii_16, ink);
+        // gap between the menu rows.
+        make_center_label(card, titles[i], 2, 4, 192, &lv_font_unscii_16, ink);
     }
     set_hint("UP/DN OK:GO HOLD:BACK");
 }
 
 static bool update_network_selection(unsigned previous, unsigned selected)
 {
-    if (previous >= 4U || selected >= 4U ||
+    if (previous >= PDKPASS_NETWORK_ITEMS || selected >= PDKPASS_NETWORK_ITEMS ||
         !s_network_cards[previous] || !s_network_cards[selected]) return false;
     const unsigned rows[] = {previous, selected};
     for (size_t i = 0; i < 2U; i++) {

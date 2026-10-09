@@ -554,16 +554,17 @@ int main(void)
         simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG);
         assert(!s_reminder_sound_playing&&!find_label(lv_screen_active(),"ANY KEY TO DISMISS"));
         check_memory();
-        // Persistent toggle in the four-row network menu remains readable.
+        // Persistent toggles in the five-row network menu remain readable.
         simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG);
         assert(find_label(lv_screen_active(),"ALERTS: ON"));
+        assert(find_label(lv_screen_active(),"KEY SOUND: OFF"));
         const char *sync_rows[] = {"CAL SYNC NEVER", "RESULTS NEVER", "DRIVERS CACHE DATE?", "TEAMS CACHE DATE?"};
         for (unsigned row = 0; row < 4; row++) {
             lv_obj_t *label = find_label(lv_screen_active(), sync_rows[row]);
             assert(label && lv_obj_get_y(label) == (int)row * 14);
         }
         lv_obj_t *back = lv_obj_get_parent(find_label(lv_screen_active(), "BACK"));
-        assert(lv_obj_get_y(back) + lv_obj_get_height(back) <= 177);
+        assert(lv_obj_get_y(back) + lv_obj_get_height(back) <= 191);
         for(unsigned i=0;i<4;i++) {
             lv_obj_t *label=find_label(lv_screen_active(),"ALERTS: ON");
             assert(label);
@@ -577,7 +578,11 @@ int main(void)
         check_memory();
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(pdkpass_reminder_enabled());
-        // The fourth menu action returns directly home.
+        // The KEY SOUND row (index 3) toggles in place; only the trailing BACK
+        // row leaves the menu.
+        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "KEY SOUND: ON"));
         simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(!find_label(lv_screen_active(), "ALERTS: ON"));

@@ -110,6 +110,10 @@ bool pdkpass_reminder_enabled(void) { return s_reminders_enabled; }
 void pdkpass_reminder_set_enabled(bool enabled) { s_reminders_enabled = enabled; }
 void pdkpass_sound_reminder_play(void) { s_reminder_sound_playing = true; }
 void pdkpass_sound_reminder_stop(void) { s_reminder_sound_playing = false; }
+// Key cues default to off, matching the firmware's persisted default.
+static bool s_key_sound_enabled;
+bool pdkpass_sound_key_enabled(void) { return s_key_sound_enabled; }
+void pdkpass_sound_set_key_enabled(bool enabled) { s_key_sound_enabled = enabled; }
 
 int bsp_battery_soc(void)
 {

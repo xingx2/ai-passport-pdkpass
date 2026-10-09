@@ -84,7 +84,7 @@ static size_t s_list_start;
 static size_t s_list_selected = (size_t)-1;
 static lv_obj_t *s_list_rows[STANDINGS_ROWS];
 static lv_obj_t *s_list_footer;
-static lv_obj_t *s_network_cards[4];
+static lv_obj_t *s_network_cards[PDKPASS_NETWORK_ITEMS];
 static lv_timer_t *s_reminder_timer;
 static bool s_reminder_visible, s_reminder_was_dark;
 static uint32_t s_reminder_previous_activity;
@@ -759,7 +759,7 @@ static int64_t home_calendar_start(const char *line)
 
 static int64_t home_next_session(char *output, size_t capacity)
 {
-    if (!s_time_valid) {
+    if (!s_time_valid && !s_time_estimated) {
         snprintf(output, capacity, "SYNC CLOCK");
         return 0;
     }
@@ -1161,7 +1161,9 @@ static void refresh_detail_sessions(void)
         }
     }
     pdkpass_state_set_detail_sessions(&s_state, mask, s_detail_sessions,
-                                      choose_default, s_time_valid, (int64_t)time(NULL));
+                                      choose_default,
+                                      s_time_valid || s_time_estimated,
+                                      (int64_t)time(NULL));
     s_detail_default_pending = false;
     s_detail_year = s_season.year;
     s_detail_meeting = race->meeting_key;
@@ -1508,15 +1510,11 @@ static void clock_tick(lv_timer_t *timer)
 {
     if (!s_time_valid && !s_time_estimated) return;
     int64_t now = (int64_t)time(NULL);
-    if (!s_time_valid) {
-        // A restored clock can label the date, but cannot choose a new round.
-        if (s_state.page == PDKPASS_PAGE_HOME) update_home_status();
-        int64_t midnight = pdkpass_next_beijing_midnight(now);
-        uint32_t delay_ms = midnight > now
-            ? (uint32_t)(midnight - now) * 1000U : 1000U;
-        lv_timer_set_period(timer ? timer : s_clock_timer, delay_ms);
-        return;
-    }
+    // The home round follows the best clock available. A clock restored from
+    // NVS (estimated) seeds the round on an offline boot, so the device opens
+    // on the race that is actually next instead of R1; the first synchronized
+    // SNTP time then corrects it. Reminders stay gated on a valid clock, so a
+    // stale estimate can never fire an alert early.
     size_t previous = s_state.season_complete ? s_season.race_count
                                               : s_state.home_race;
     size_t next = pdkpass_schedule_next_race(now, s_season.races,
@@ -1800,7 +1798,9 @@ bool pdkpass_ui_season_update(void)
                                       ? s_season.driver_count - 1U
                                       : 0U;
     }
-    if (s_time_valid) {
+    // A refreshed snapshot must still land on the current round, even when the
+    // clock is only the estimate restored from NVS.
+    if (s_time_valid || s_time_estimated) {
         int64_t now = (int64_t)time(NULL);
         size_t next = pdkpass_schedule_next_race(now, s_season.races,
                                                  s_season.race_count);
@@ -1890,6 +1890,12 @@ void pdkpass_ui_key(bsp_btn_t btn, bsp_btn_ev_t ev)
     if (s_state.page == PDKPASS_PAGE_NETWORK && input == PDKPASS_INPUT_OK &&
         s_state.network_selection == 2U) {
         pdkpass_reminder_set_enabled(!pdkpass_reminder_enabled());
+        render();
+        return;
+    }
+    if (s_state.page == PDKPASS_PAGE_NETWORK && input == PDKPASS_INPUT_OK &&
+        s_state.network_selection == 3U) {
+        pdkpass_sound_set_key_enabled(!pdkpass_sound_key_enabled());
         render();
         return;
     }

@@ -1,6 +1,7 @@
 #include "pdkpass_sound.h"
 
 #include "bsp_audio.h"
+#include "pdkpass_cache.h"
 #include "pdkpass_reminder.h"
 #include "pdkpass_sound_core.h"
 #include "esp_log.h"
@@ -10,11 +11,23 @@
 #include "freertos/task.h"
 #include <stdbool.h>
 #include <stdatomic.h>
+#include <stdint.h>
 
 #define SOUND_IDLE_MS 250U
 #define SOUND_RETRY_US (60LL * 1000000LL)
 #define SOUND_VOLUME 50U
 #define RESULT_VOLUME 70U
+#define SOUND_SETTINGS_MAGIC 0x5044534BU
+#define SOUND_SETTINGS_VERSION 1U
+
+// Persisted key-cue preference. The default is off, so a device that never
+// saved the setting stays silent until the user enables it in the menu.
+typedef struct {
+    uint32_t magic;
+    uint16_t version;
+    uint8_t key_sound;
+    uint8_t reserved;
+} sound_settings_t;
 
 static const char *TAG = "pdkpass_sound";
 static QueueHandle_t s_queue;
@@ -26,7 +39,36 @@ _Static_assert(sizeof(s_reminder_pcm) / sizeof(s_reminder_pcm[0]) == 48000,
                "Reminder must be the approved three-second recording");
 static atomic_bool s_reminder_active;
 static atomic_bool s_reminder_cancelled = true;
+static atomic_bool s_key_enabled; // Default off; toggled by the NETWORK menu.
 static int s_consumed_button = -1; // Owned by the button callback.
+
+static void load_settings(void)
+{
+    sound_settings_t rec = {0};
+    size_t size = sizeof(rec);
+    bool saved = pdkpass_cache_read_blob("pdk_sound", "settings", &rec, &size) == ESP_OK &&
+                 size == sizeof(rec) && rec.magic == SOUND_SETTINGS_MAGIC &&
+                 rec.version == SOUND_SETTINGS_VERSION && rec.key_sound <= 1U;
+    atomic_store(&s_key_enabled, saved && rec.key_sound != 0);
+}
+
+bool pdkpass_sound_key_enabled(void)
+{
+    return atomic_load(&s_key_enabled);
+}
+
+void pdkpass_sound_set_key_enabled(bool enabled)
+{
+    atomic_store(&s_key_enabled, enabled);
+    sound_settings_t rec = {
+        .magic = SOUND_SETTINGS_MAGIC,
+        .version = SOUND_SETTINGS_VERSION,
+        .key_sound = enabled ? 1U : 0U,
+        .reserved = 0U,
+    };
+    if (pdkpass_cache_write_blob("pdk_sound", "settings", &rec, sizeof(rec)) != ESP_OK)
+        ESP_LOGW(TAG, "Key sound setting not saved");
+}
 
 void pdkpass_sound_reminder_play(void)
 {
@@ -151,6 +193,7 @@ static void sound_worker(void *unused)
 esp_err_t pdkpass_sound_start(void)
 {
     if (s_queue) return ESP_OK;
+    load_settings();
     s_queue = xQueueCreate(1, sizeof(pdkpass_sound_kind_t));
     if (!s_queue) return ESP_ERR_NO_MEM;
     if (xTaskCreate(sound_worker, "pdk_sfx", 4096, NULL, 4, NULL) != pdPASS) {
@@ -163,6 +206,7 @@ esp_err_t pdkpass_sound_start(void)
 
 void pdkpass_sound_key(bsp_btn_t button, bsp_btn_ev_t event)
 {
+    if (!atomic_load(&s_key_enabled)) return;
     if (atomic_load(&s_reminder_active) || !s_queue || (event != BSP_BTN_PRESS &&
                      !(event == BSP_BTN_LONG && button == BSP_BTN_OK))) return;
     pdkpass_sound_kind_t kind;

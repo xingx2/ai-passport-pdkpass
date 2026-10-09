@@ -106,13 +106,15 @@ not update the calendar date. Existing calendar/results dates are retained,
 and each data set writes its date at most once per Beijing day. A date from another season is not shown
 as current: the menu says `CAL 2027 NO SYNC` or `RESULT 2027 NO SYNC` until that
 season is updated. An active-season cache without a recorded date says
-`CACHE DATE?`; `NEVER` means neither cached data nor a recorded update. After time
-synchronization, the device keeps counting locally. It rechecks the
-season at Beijing midnight and at the current round's switch boundary, as well
-as after the network becomes available. Each online round remains current until
-its recorded race end, then the dashboard advances to the following round. The
-bundled offline fallback uses a four-hour window from the scheduled race start.
-After the final round it displays `SEASON COMPLETE`.
+`CACHE DATE?`; `NEVER` means neither cached data nor a recorded update. The
+device keeps counting locally and rechecks at Beijing midnight, at the current
+round's switch boundary, and after the network becomes available. The home round
+follows the best clock available: a clock synchronized during this boot is exact,
+while a clock restored only from NVS is an offline estimate, so an offline boot
+lands directly on the next race instead of staying at R1. Each online round
+remains current until its recorded race end, then the dashboard advances to the
+following round. The bundled offline fallback uses a four-hour window from the
+scheduled race start. After the final round it displays `SEASON COMPLETE`.
 
 Automatic reconnects after power-saving Wi-Fi shutdown, and recovery of a
 previously synchronized link, retry every five minutes if saved networks are
@@ -125,10 +127,11 @@ Reminders default to on. In `NETWORK`, select `ALERTS: ON/OFF` and press OK to
 change the saved setting. Every scheduled FP1, FP2, FP3, sprint qualifying,
 sprint, qualifying and race session rings once, ten minutes before its start.
 Missing or cancelled sessions do not ring. Schedule updates change the deadline.
-The same switch controls the cue when a session result is first saved; button
-cues remain available when `ALERTS` is off.
+The same switch controls the cue when a session result is first saved. Button
+cues have their own `KEY SOUND: ON/OFF` switch (see below) and are unaffected
+by `ALERTS`.
 
-The approved three-second melody plays at 80%; button cues remain at 50%.
+The approved three-second melody plays at 80%; enabled button cues stay at 50%.
 Audio initialization/open failures retry on a new cue after at least 60 seconds;
 failed cues are discarded rather than replayed later.
 A notice wakes the display for up to 15 seconds, showing the round, session and
@@ -149,6 +152,15 @@ waits and retries after five seconds. A power failure between that save and the
 actual sound can skip that reminder. Timers use the existing worker; there is
 no new task or per-second network polling. Real-device loudness, wake-up, power
 consumption and simultaneous TLS/audio headroom still require testing.
+
+## Button sounds
+
+Button cues default to off. In `NETWORK`, select `KEY SOUND: ON/OFF` and press OK
+to change the saved setting; it persists across upgrades and restarts. When on,
+the up, down, OK and back keys play a short cue on press; when off, buttons stay
+silent. This switch is independent of `ALERTS`: turning reminders off does not
+mute button cues, and turning button cues off does not affect the 80% session
+reminder ringtone.
 
 ## Power saving
 
@@ -254,7 +266,8 @@ Driver standings have no bundled default points: without a downloaded cache,
 the page shows `CONNECT TO UPDATE` and `DRIVER DATA PENDING`. Successful syncs
 are saved for offline use across power cycles and firmware upgrades.
 Startup retains compatible calendars, driver/team standings, results, reminder
-schedules, ALERTS and other settings, saved time and Wi-Fi profiles/passwords.
+schedules, ALERTS, button-sound and other settings, saved time and Wi-Fi
+profiles/passwords.
 The former firmware-fingerprint marker is ignored. Services still validate
 snapshot formats and seasons; incompatible data can be discarded independently.
 Only known unreadable NVS-format errors reset the affected application partition;
@@ -457,8 +470,11 @@ connection test to finish before submitting another network. `NTP ERR` means
 Wi-Fi connected but time synchronization is still retrying. A clock successfully
 synchronized during this boot remains usable across reconnects; a restored NVS
 time is only an offline estimate and does not account for power-off duration.
-The home status prefixes its date with `~`; this estimate does not trigger
-automatic round or season changes until time synchronization succeeds.
+The home status prefixes its date with `~`. That estimate still positions the
+home round on the next race, but it never switches the season and never fires a
+session reminder — both require a clock synchronized during this boot. With no
+usable time at all (first boot or a full reflash) the home shows `SYNC CLOCK`
+and R1 until one synchronization succeeds.
 
 Use the native simulator for previews and photographs for device evidence.
 Screen-off stops the UI idle timer; automatic light sleep is

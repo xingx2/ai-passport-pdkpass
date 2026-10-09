@@ -256,8 +256,22 @@ int main(void)
     pdkpass_state_handle(&state, PDKPASS_INPUT_BACK, 23, 23, 11);
     assert(state.page == PDKPASS_PAGE_NETWORK);
     pdkpass_state_handle(&state, PDKPASS_INPUT_UP, 23, 23, 11);
-    assert(state.network_selection == 3);
+    assert(state.network_selection == PDKPASS_NETWORK_ITEMS - 1U);
     pdkpass_state_handle(&state, PDKPASS_INPUT_OK, 23, 23, 11);
     assert(state.page == PDKPASS_PAGE_HOME);
+    // Re-enter the menu: only the trailing BACK row leaves it. A non-terminal
+    // row such as KEY SOUND (index 3) toggles in place.
+    pdkpass_state_handle(&state, PDKPASS_INPUT_BACK, 23, 23, 11);
+    assert(state.page == PDKPASS_PAGE_NETWORK);
+    assert(state.network_selection == PDKPASS_NETWORK_ITEMS - 1U);
+    pdkpass_state_handle(&state, PDKPASS_INPUT_UP, 23, 23, 11);
+    assert(state.network_selection == 3U);
+    pdkpass_state_handle(&state, PDKPASS_INPUT_OK, 23, 23, 11);
+    assert(state.page == PDKPASS_PAGE_NETWORK && state.network_selection == 3U);
+    // Selection wraps in both directions across all five rows.
+    pdkpass_state_handle(&state, PDKPASS_INPUT_DOWN, 23, 23, 11);
+    assert(state.network_selection == PDKPASS_NETWORK_ITEMS - 1U);
+    pdkpass_state_handle(&state, PDKPASS_INPUT_DOWN, 23, 23, 11);
+    assert(state.network_selection == 0U);
     return 0;
 }

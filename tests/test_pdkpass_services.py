@@ -661,8 +661,10 @@ static pdkpass_season_snapshot_t s_season;
 static pdkpass_team_snapshot_t s_team_standings;
 static pdkpass_state_t s_state;
 static int s_list_page;
-static bool s_time_valid,season_ready,teams_ready;
+static bool s_time_valid,s_time_estimated,season_ready,teams_ready;
 static unsigned renders;
+static int schedule_calls;
+static size_t scheduled_race;
 bool pdkpass_season_snapshot(pdkpass_season_snapshot_t *out) {
  assert(out==&s_season);if(!season_ready)return false;
  out->race_count=2;out->driver_count=2;return true;
@@ -673,10 +675,10 @@ bool pdkpass_season_team_snapshot(pdkpass_team_snapshot_t *out) {
 }
 static void render(void) {renders++;}
 size_t pdkpass_schedule_next_race(int64_t now,const pdkpass_race_t *races,size_t count) {
- (void)now;(void)races;(void)count;return 0;
+ (void)now;(void)races;schedule_calls++;return count?1U:0U;
 }
 void pdkpass_state_set_home_race(pdkpass_state_t *state,size_t race,size_t count) {
- (void)state;(void)race;(void)count;
+ (void)state;(void)count;scheduled_race=race;
 }
 """
         code += function(source, 'bool pdkpass_ui_season_update(')
@@ -687,7 +689,13 @@ int main(void) {
  season_ready=true;assert(!pdkpass_ui_season_update()&&renders==0);
  teams_ready=true;assert(pdkpass_ui_season_update()&&renders==1);
  assert(s_state.selected_race==1&&s_state.selected_driver==1&&s_state.selected_team==1);
- puts("UI direct snapshot storage, busy-cache retry and selection clamp: PASS");
+ // Without any clock the round must not be guessed.
+ assert(schedule_calls==0);
+ // An NVS-restored estimate alone still positions the round on the next race.
+ s_time_estimated=true;
+ assert(pdkpass_ui_season_update()&&renders==2);
+ assert(schedule_calls==1&&scheduled_race==1);
+ puts("UI snapshot storage, busy-cache retry, clamp and estimated-clock round: PASS");
 }
 """
         compile_run(code)
@@ -1170,7 +1178,7 @@ int main(void) {
 typedef void *QueueHandle_t;
 static QueueHandle_t s_queue=(void *)1,s_keys=(void *)2;
 typedef struct {bsp_btn_t button;bsp_btn_ev_t event;bool reschedule;} key_event_t;
-static atomic_bool s_reminder_active,s_reminder_cancelled=true;
+static atomic_bool s_reminder_active,s_reminder_cancelled=true,s_key_enabled=true;
 static int s_consumed_button=-1;
 static unsigned volume,stops,writes,samples,delays,key_cues,ui_events,cancel_at,disable_at,queued;
 static atomic_bool s_enabled=true;
@@ -1291,7 +1299,7 @@ static bool retry_case, open_fail;
 static bool init_fail, write_fail, coalesced, alerts_enabled=true;
 static bool queued_disabled_result, queued_enabled_result, queued_disabled_reminder;
 bool pdkpass_reminder_enabled(void) {return alerts_enabled;}
-static atomic_bool s_reminder_active, s_reminder_cancelled;
+static atomic_bool s_reminder_active, s_reminder_cancelled, s_key_enabled;
 static void pdkpass_sound_reminder_stop(void) {atomic_store(&s_reminder_active,false);atomic_store(&s_reminder_cancelled,true);}
 
 static void play_reminder(void) {assert(false);}
@@ -1414,6 +1422,7 @@ static int xQueueReceive(QueueHandle_t queue,void *value,unsigned wait) {
         code += function(main_source, 'static void on_key(')
         code += r"""
 int main(void) {
+ atomic_store(&s_key_enabled,true);
  on_key(BSP_BTN_UP,BSP_BTN_PRESS,NULL);
  assert(sounds==1 && last_kind==PDKPASS_SOUND_UP && ui_keys==0 && init_calls==0);
  on_key(BSP_BTN_UP,BSP_BTN_CLICK,NULL);
@@ -1438,6 +1447,12 @@ int main(void) {
  on_key(BSP_BTN_UP,BSP_BTN_PRESS,NULL);
  assert(sounds==6 && last_kind==PDKPASS_SOUND_UP); // Buttons still sound.
  alerts_enabled=true;
+ atomic_store(&s_key_enabled,false);
+ on_key(BSP_BTN_UP,BSP_BTN_PRESS,NULL);
+ assert(sounds==6); // KEY SOUND off mutes key cues regardless of ALERTS.
+ atomic_store(&s_key_enabled,true);
+ on_key(BSP_BTN_UP,BSP_BTN_PRESS,NULL);
+ assert(sounds==7 && last_kind==PDKPASS_SOUND_UP);
  if(setjmp(done)==0) sound_worker(NULL);
  assert(probes==3 && volume==50);
  step=init_calls=opens=stops=writes=delays=0;coalesced=false;write_fail=true;
@@ -2344,7 +2359,7 @@ int main(void) {
  assert(latest.time_valid && !latest.time_estimated);
  plausible=false;publish_state(PDKPASS_NETWORK_OFFLINE);
  assert(!latest.time_valid && !latest.time_estimated);
- puts("restored clock estimate is not trusted for race selection: PASS");
+ puts("restored clock is reported as an estimate, never as a synchronized clock: PASS");
 }
 '''
         compile_run(code)

@@ -27,6 +27,9 @@ typedef enum {
 
 #define PDKPASS_DETAIL_ROWS 3U
 
+// NETWORK menu rows in order: WI-FI SETUP, RETRY WI-FI, ALERTS, KEY SOUND, BACK.
+#define PDKPASS_NETWORK_ITEMS 5U
+
 // One slot per session kind. Unknown timestamps stay zero; a cached result is
 // independent evidence of completion even after a restart without a valid clock.
 typedef struct {

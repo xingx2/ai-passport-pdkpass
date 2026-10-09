@@ -6,6 +6,10 @@
 
 ## Unreleased
 
+- Open on the race that is actually next: the home round now follows the best clock available, so a boot with only the NVS-restored (estimated) time lands on the upcoming round instead of staying at R1, and the first synchronized time corrects it. The estimate never switches the season and never fires a session reminder. With no usable time at all (first boot or a full reflash) the home still shows `SYNC CLOCK` and R1 until one synchronization succeeds.
+
+- Add a button-sound switch: the `NETWORK` menu gains `KEY SOUND: ON/OFF`, off by default, toggled and saved with OK. While off, key presses stay silent; the session reminder ringtone and the result cue are unaffected. The setting survives upgrades and restarts.
+
 - Cancel queued or streaming session reminder audio when ALERTS turns off, and recheck the setting before showing a delayed reminder or playing its sound. Re-enabling alerts does not resume cancelled audio; button sounds remain enabled.
 
 - Keep the track-page design while showing every scheduled session in three-row pages, with button hints and no page counter. Up/down selects a session and pages without wrapping or requesting data; OK opens that session directly. Default to the latest completed session (or next known start), retain the selection on return and background updates, and show cached Beijing times or explicit unknown/cancelled states.

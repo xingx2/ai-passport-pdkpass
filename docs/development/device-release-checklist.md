@@ -15,7 +15,8 @@ Record the firmware filename, SHA-256, Git commit, test time, and observed resul
 | Setup pages | Device QR and backup details are correct; phone page shows real nearby networks and allows manual entry | Pending |
 | Setup safety | Wrong password does not replace saved credentials; correct password joins 2.4 GHz Wi-Fi and reconnects after reboot | Pending |
 | Time and data | Clock syncs; current season, driver/team standings, and completed session podiums update; failures preserve old caches | Pending |
-| Alerts and audio | Alert switch persists; button and alert sounds work; observe a real ten-minute pre-race alert separately | Pending |
+| Boot round selection | A device that has synchronized before, after a power cycle offline, opens on the next race rather than R1, with a `~` date in the status bar; a first boot or full reflash with no time still shows `SYNC CLOCK` and R1 | Pending |
+| Alerts and audio | Alert switch persists; button-sound switch defaults to off and persists; alert sounds work; observe a real ten-minute pre-race alert separately | Pending |
 | Power and battery | Dims at 30 seconds, sleeps at 90 seconds, wakes on a button; record battery display and charge LED | Pending |
 | Continued operation | Repeated page navigation, setup, and network requests do not restart or noticeably slow the device | Pending |
 | Recovery | Build compatibility passes; device entry and BLE discovery are pending, without unnecessary writes | Pending |
