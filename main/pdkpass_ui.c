@@ -2,7 +2,13 @@
 
 #include "bsp_battery.h"
 #include "bsp_display.h"
+#include "lfc_data.h"
+#include "lfc_schedule.h"
+#include "lfc_store.h"
+#include "lfc_table.h"
+#include "lfc_theme.h"
 #include "pdkpass_data.h"
+#include "pdkpass_deck.h"
 #include "pdkpass_font.h"
 #include "pdkpass_power.h"
 #include "pdkpass_model.h"
@@ -55,6 +61,14 @@ static lv_obj_t *s_content;
 static lv_obj_t *s_hint_box;
 static lv_obj_t *s_hint;
 static char s_home_session_text[22];
+// The dashboard is one deck: the Formula 1 rounds and the Liverpool fixtures
+// merged in chronological order. It is rebuilt from the live tables whenever the
+// UI reads it, so a mid-session calendar sync or fixture refresh shows up with
+// no subscription of its own.
+static pdkpass_deck_t s_deck;
+// Deck position of the card on screen, so the clock only repaints the dashboard
+// when it actually moves.
+static size_t s_home_shown = (size_t)-1;
 static lv_obj_t *s_battery;
 static lv_obj_t *s_battery_fill;
 static lv_obj_t *s_battery_tip;
@@ -87,6 +101,10 @@ static lv_obj_t *s_list_footer;
 static lv_obj_t *s_network_cards[PDKPASS_NETWORK_ITEMS];
 static lv_timer_t *s_reminder_timer;
 static bool s_reminder_visible, s_reminder_was_dark;
+// The reminder layer is shared: `s_reminder_is_lfc` selects between the Formula
+// 1 race alert and the Liverpool kick-off notice.
+static bool s_reminder_is_lfc;
+static size_t s_lfc_reminder_index;
 static uint32_t s_reminder_previous_activity;
 static pdkpass_reminder_entry_t s_reminder_alert;
 static unsigned s_idle_stage;
@@ -110,6 +128,39 @@ static uint32_t s_sync_reject_until;
 static pdkpass_page_t s_sync_reject_page;
 static char s_sync_reject_hint[28];
 static void render(void);
+
+// Rebuild the merged dashboard deck from the live season calendar and the
+// current fixture table. Reading it costs one stable merge, which is trivial
+// next to a repaint, and it keeps both sources authoritative.
+static void home_deck_rebuild(void)
+{
+    pdkpass_deck_build(&s_deck, s_season.races, s_season.race_count,
+                       lfc_table(), lfc_table_count());
+}
+
+// Park the carousel on the live event unless the user is browsing by hand. An
+// unusable clock leaves the cursor where it is, so an offline boot still opens
+// on the first card instead of on a meaningless position.
+static void home_park(void)
+{
+    if (s_state.home_browsing) return;
+    if (!s_time_valid && !s_time_estimated) return;
+    pdkpass_state_set_home_card(&s_state,
+        pdkpass_deck_next(&s_deck, (int64_t)time(NULL),
+                          PDKPASS_DECK_GRACE_SECONDS),
+        s_deck.count);
+}
+
+// Card under the carousel cursor. The Formula 1 round index is kept in step with
+// it so the round detail and its results open on what the dashboard shows.
+static const pdkpass_deck_entry_t *home_current(void)
+{
+    if (s_deck.count == 0U) return NULL;
+    if (s_state.home_card >= s_deck.count) s_state.home_card = s_deck.count - 1U;
+    const pdkpass_deck_entry_t *entry = &s_deck.entries[s_state.home_card];
+    if (entry->kind == PDKPASS_DECK_RACE) s_state.selected_race = entry->index;
+    return entry;
+}
 
 static lv_obj_t *make_block(lv_obj_t *parent, int x, int y, int w, int h,
                             uint32_t color)
@@ -662,13 +713,13 @@ static void render_season_complete(void)
 
     make_zoom_label(s_content, "SEASON", 0, 12, INNER_W, 0xFFFFFF);
     make_medium_label(s_content, "COMPLETE", 0, 55, INNER_W, UI_YELLOW);
-    make_center_label(s_content, "THE FINAL FLAG IS OUT", 0, 103, INNER_W,
+    make_center_label(s_content, "ALL EVENTS PLAYED", 0, 103, INNER_W,
                       &lv_font_unscii_16, 0xFFFFFF);
     lv_obj_t *offline = make_card(s_content, 8, 133, 194, 31,
                                   UI_PAPER, 3);
     make_center_label(offline, "SEASON DATA SAVED", 0, 7, 188,
                       &lv_font_unscii_8, UI_INK);
-    set_hint("UP/DN:BROWSE RACES");
+    set_hint("UP/DN:BROWSE");
 }
 
 static const char *network_word(void)
@@ -682,6 +733,19 @@ static const char *network_word(void)
     case PDKPASS_NETWORK_TIME_ERROR: return "NTP ERR";
     default: return "NET...";
     }
+}
+
+// Accent of the card currently on the dashboard, so the status bar follows
+// whichever kind of card is showing.
+static uint32_t home_card_accent(const pdkpass_deck_entry_t *entry)
+{
+    if (!entry) return UI_SKY;
+    if (entry->kind == PDKPASS_DECK_MATCH) {
+        if (entry->index >= lfc_table_count()) return UI_SKY;
+        return lfc_fixture_theme(&lfc_table()[entry->index]).top;
+    }
+    if (entry->index >= s_season.race_count) return UI_SKY;
+    return theme_for_race(&s_season.races[entry->index]).top;
 }
 
 static void update_home_status(void)
@@ -707,9 +771,9 @@ static void update_home_status(void)
     uint32_t background = UI_SKY;
     if (s_network_state == PDKPASS_NETWORK_OFFLINE) {
         background = UI_RED;
-    } else if ((!s_state.season_complete || s_state.home_browsing) &&
-               s_state.selected_race < s_season.race_count) {
-        background = theme_for_race(&s_season.races[s_state.selected_race]).top;
+    } else if ((!s_state.deck_complete || s_state.home_browsing) &&
+               s_state.home_card < s_deck.count) {
+        background = home_card_accent(&s_deck.entries[s_state.home_card]);
     }
     set_status(text, background);
 }
@@ -729,6 +793,8 @@ static void make_progress(size_t current, size_t total)
         x += width + gap;
     }
 }
+
+#include "lfc_ui.inc"
 
 // Offline calendars contain only three published session times. Do not infer
 // missing practice/sprint times; complete discovered schedules take precedence.
@@ -757,13 +823,14 @@ static int64_t home_calendar_start(const char *line)
     return pdkpass_parse_iso8601_utc(iso, &start) ? start : 0;
 }
 
-static int64_t home_next_session(char *output, size_t capacity)
+static int64_t home_next_session(size_t race_index, char *output,
+                                 size_t capacity)
 {
     if (!s_time_valid && !s_time_estimated) {
         snprintf(output, capacity, "SYNC CLOCK");
         return 0;
     }
-    const pdkpass_race_t *race = &s_season.races[s_state.selected_race];
+    const pdkpass_race_t *race = &s_season.races[race_index];
     pdkpass_reminder_entry_t entries[PDKPASS_SESSION_COUNT] = {0};
     bool complete = pdkpass_reminder_round_schedule(s_season.year,
                                                    race->meeting_key, entries);
@@ -773,7 +840,7 @@ static int64_t home_next_session(char *output, size_t capacity)
         entries[PDKPASS_SESSION_RACE].start_utc = home_calendar_start(race->race_cn);
         for (unsigned i = 0; i < PDKPASS_SESSION_COUNT; i++) {
             pdkpass_result_snapshot_t result;
-            if (pdkpass_results_get(s_state.selected_race, i, &result) &&
+            if (pdkpass_results_get(race_index, i, &result) &&
                 (result.status == PDKPASS_RESULT_CANCELLED ||
                  result.status == PDKPASS_RESULT_NOT_HELD ||
                  result.status == PDKPASS_RESULT_READY))
@@ -795,19 +862,44 @@ static int64_t home_next_session(char *output, size_t capacity)
     return entries[next].start_utc;
 }
 
-static void render_home(void)
+static int64_t beijing_midnight(int64_t now_utc)
 {
-    if (s_network_state == PDKPASS_NETWORK_SETUP) {
-        render_wifi_setup();
-        return;
-    }
-    if ((s_state.season_complete && !s_state.home_browsing) ||
-        s_state.selected_race >= s_season.race_count) {
-        render_season_complete();
-        return;
-    }
+    const int64_t day = (now_utc + BEIJING_OFFSET_SECONDS) / 86400LL;
+    return (day + 1) * 86400LL - BEIJING_OFFSET_SECONDS;
+}
 
-    const pdkpass_race_t *race = &s_season.races[s_state.selected_race];
+// Arm the clock for the next moment the dashboard can change: the card on screen
+// expiring, the next card starting, the Formula 1 card's next session, or the
+// next Beijing midnight. A clock that was never set leaves the timer alone,
+// because every one of those boundaries would be meaningless.
+static void home_arm_clock(void)
+{
+    if (!s_clock_timer || (!s_time_valid && !s_time_estimated)) return;
+    int64_t now = (int64_t)time(NULL);
+    int64_t deadline = beijing_midnight(now);
+    size_t landing = pdkpass_deck_next(&s_deck, now, PDKPASS_DECK_GRACE_SECONDS);
+    if (landing < s_deck.count) {
+        const pdkpass_deck_entry_t *entry = &s_deck.entries[landing];
+        int64_t end = entry->when_utc + PDKPASS_DECK_GRACE_SECONDS;
+        if (end > now && end < deadline) deadline = end;
+        if (entry->kind == PDKPASS_DECK_RACE) {
+            char line[22];
+            int64_t session = home_next_session(entry->index, line,
+                                                sizeof(line));
+            if (session > now && session < deadline) deadline = session;
+        }
+    }
+    uint64_t delay = deadline > now ? (uint64_t)(deadline - now) * 1000U : 1000U;
+    if (delay > UINT32_MAX) delay = UINT32_MAX;
+    lv_timer_set_period(s_clock_timer, (uint32_t)delay);
+    lv_timer_reset(s_clock_timer);
+}
+
+// One Formula 1 round on the shared dashboard deck. `position` and `total` are
+// the deck counter, so a round card and a fixture card read alike.
+static void render_home_race(size_t race_index, size_t position, size_t total)
+{
+    const pdkpass_race_t *race = &s_season.races[race_index];
     pdkpass_theme_t theme = theme_for_race(race);
     memset(&s_team_standings, 0, sizeof(s_team_standings));
     pdkpass_season_team_snapshot(&s_team_standings);
@@ -845,27 +937,45 @@ static void render_home(void)
     lv_obj_t *race_card = make_card(s_content, 8, 113, 194, 27,
                                     race->accent, 3);
     char race_time[22];
-    int64_t next_start = home_next_session(race_time, sizeof(race_time));
+    home_next_session(race_index, race_time, sizeof(race_time));
     snprintf(s_home_session_text, sizeof(s_home_session_text), "%s", race_time);
-    if (s_clock_timer && s_time_valid) {
-        int64_t now = (int64_t)time(NULL);
-        int64_t deadline = pdkpass_schedule_next_check(now, s_season.races,
-                                                      s_season.race_count);
-        if (next_start > now && next_start < deadline) deadline = next_start;
-        uint64_t delay = deadline > now ? (uint64_t)(deadline - now) * 1000U : 1000U;
-        lv_timer_set_period(s_clock_timer, delay > UINT32_MAX ? UINT32_MAX : (uint32_t)delay);
-        lv_timer_reset(s_clock_timer);
-    }
     make_medium_label(race_card, race_time, 0, -2, 188,
                       contrast_color(race->accent));
     char page[20];
-    snprintf(page, sizeof(page), "%u / %u",
-             (unsigned)(s_state.selected_race + 1U),
-             (unsigned)s_season.race_count);
+    snprintf(page, sizeof(page), "%u / %u", (unsigned)(position + 1U),
+             (unsigned)total);
     make_center_label(s_content, page, 0, 146, INNER_W,
                       &lv_font_unscii_16, UI_PAPER);
-    make_progress(s_state.selected_race, s_season.race_count);
-    set_hint("UP/DN:RACE OK:VIEW");
+    make_progress(position, total);
+    set_hint("UP/DN:CARD OK:VIEW");
+}
+
+// The dashboard opens on the live event and walks one merged timeline: a Formula
+// 1 round card, a Liverpool fixture card, and so on in the order they happen.
+static void render_home(void)
+{
+    if (s_network_state == PDKPASS_NETWORK_SETUP) {
+        render_wifi_setup();
+        return;
+    }
+    home_deck_rebuild();
+    home_park();
+    if (s_deck.count == 0U ||
+        (s_state.deck_complete && !s_state.home_browsing)) {
+        render_season_complete();
+        return;
+    }
+    const pdkpass_deck_entry_t *entry = home_current();
+    if (!entry) {
+        render_season_complete();
+        return;
+    }
+    s_home_shown = s_state.home_card;
+    if (entry->kind == PDKPASS_DECK_MATCH)
+        render_home_match(entry->index, s_state.home_card, s_deck.count);
+    else
+        render_home_race(entry->index, s_state.home_card, s_deck.count);
+    home_arm_clock();
 }
 
 static bool update_list_selection(int page, size_t start, size_t selected,
@@ -1317,6 +1427,11 @@ static void render_results(void)
 
 static void render_reminder(void)
 {
+    // The Liverpool kick-off notice reuses this layer, timer and dismissal.
+    if (s_reminder_is_lfc) {
+        render_lfc_reminder();
+        return;
+    }
     const pdkpass_race_t *race = NULL;
     for (size_t i = 0; i < s_season.race_count; i++) {
         if (s_season.races[i].round == s_reminder_alert.round) {
@@ -1403,9 +1518,10 @@ static void render(void)
     bool circuit_theme = s_state.page == PDKPASS_PAGE_CALENDAR ||
                          s_state.page == PDKPASS_PAGE_RACE_DETAIL ||
                          s_state.page == PDKPASS_PAGE_RESULTS ||
+                         s_state.page == PDKPASS_PAGE_LFC_DETAIL ||
                          (s_state.page == PDKPASS_PAGE_HOME &&
                           s_network_state != PDKPASS_NETWORK_SETUP &&
-                          (!s_state.season_complete || s_state.home_browsing));
+                          (!s_state.deck_complete || s_state.home_browsing));
     if (!circuit_theme)
         ui_pixel_screen_set_theme(s_screen, UI_SKY, UI_SKY_DARK);
     switch (s_state.page) {
@@ -1429,6 +1545,9 @@ static void render(void)
         break;
     case PDKPASS_PAGE_RESULTS:
         render_results();
+        break;
+    case PDKPASS_PAGE_LFC_DETAIL:
+        render_lfc_detail();
         break;
     }
     update_manual_hint();
@@ -1509,40 +1628,34 @@ bool pdkpass_ui_display_dark(void)
 static void clock_tick(lv_timer_t *timer)
 {
     if (!s_time_valid && !s_time_estimated) return;
-    int64_t now = (int64_t)time(NULL);
-    // The home round follows the best clock available. A clock restored from
-    // NVS (estimated) seeds the round on an offline boot, so the device opens
-    // on the race that is actually next instead of R1; the first synchronized
-    // SNTP time then corrects it. Reminders stay gated on a valid clock, so a
-    // stale estimate can never fire an alert early.
-    size_t previous = s_state.season_complete ? s_season.race_count
-                                              : s_state.home_race;
-    size_t next = pdkpass_schedule_next_race(now, s_season.races,
-                                             s_season.race_count);
-    pdkpass_state_set_home_race(&s_state, next, s_season.race_count);
+    (void)timer;
+    // The merged deck follows the best clock available. A clock restored from
+    // NVS (estimated) seeds the landing card on an offline boot, so the device
+    // opens on the event that is actually next instead of on the first card; the
+    // first synchronized SNTP time then corrects it. Reminders stay gated on a
+    // valid clock, so a stale estimate can never fire an alert early.
+    home_deck_rebuild();
+    size_t previous = s_state.home_card;
+    home_park();
     if (s_state.page == PDKPASS_PAGE_HOME) {
-        if (previous != next && !s_state.home_browsing) render();
-        else {
+        bool race_card = s_state.home_card < s_deck.count &&
+                         s_deck.entries[s_state.home_card].kind == PDKPASS_DECK_RACE;
+        if (s_state.home_card != previous || s_state.home_card != s_home_shown) {
+            render();
+        } else if (race_card) {
+            // The card is the same, so only its time line can have moved on to
+            // the next session; anything else needs just the status line.
             char line[22];
             line[0] = '\0';
-            if (s_state.selected_race < s_season.race_count) home_next_session(line, sizeof(line));
-            if (!s_state.season_complete && strcmp(line, s_home_session_text) != 0) render();
+            home_next_session(s_deck.entries[s_state.home_card].index, line,
+                              sizeof(line));
+            if (strcmp(line, s_home_session_text) != 0) render();
             else update_home_status();
+        } else {
+            update_home_status();
         }
     }
-
-    int64_t deadline = pdkpass_schedule_next_check(now, s_season.races,
-                                                   s_season.race_count);
-    if (s_state.page == PDKPASS_PAGE_HOME &&
-        s_state.selected_race < s_season.race_count && !s_state.season_complete) {
-        char line[22];
-        int64_t session_start = home_next_session(line, sizeof(line));
-        if (session_start > now && session_start < deadline) deadline = session_start;
-    }
-    uint64_t delay_ms = deadline > now ? (uint64_t)(deadline - now) * 1000U
-                                       : 1000U;
-    if (delay_ms > UINT32_MAX) delay_ms = UINT32_MAX;
-    lv_timer_set_period(timer ? timer : s_clock_timer, (uint32_t)delay_ms);
+    home_arm_clock();
 }
 
 static void update_network_label(void)
@@ -1563,7 +1676,10 @@ static void idle_tick(lv_timer_t *timer)
         s_idle_stage = 2;
         lv_timer_pause(s_sync_timer);
         if (s_state.page == PDKPASS_PAGE_HOME && s_state.home_browsing) {
-            pdkpass_state_reset_home_race(&s_state, s_season.race_count);
+            // Coming back from standby returns the carousel to the live event.
+            pdkpass_state_reset_home(&s_state);
+            home_deck_rebuild();
+            home_park();
             render();
         }
         lv_timer_pause(timer);
@@ -1609,15 +1725,14 @@ static void reminder_timeout(lv_timer_t *timer)
     pdkpass_ui_reminder_dismiss();
 }
 
-void pdkpass_ui_reminder_show(const pdkpass_reminder_entry_t *alert)
+// Wake the display, run the reminder countdown and sound the alert. Shared by
+// the Formula 1 race alert and the Liverpool kick-off notice.
+static void reminder_present(void)
 {
-    // A due reminder may have waited for the LVGL lock while ALERTS changed.
-    if (!s_screen || !alert || !pdkpass_reminder_enabled()) return;
     if (!s_reminder_visible) {
         s_reminder_was_dark = s_idle_stage == 2;
         s_reminder_previous_activity = s_last_activity;
     }
-    s_reminder_alert = *alert;
     s_reminder_visible = true;
     pdkpass_power_display(true);
     if (s_idle_stage != 2 || bsp_display_sleep(false) == ESP_OK) {
@@ -1637,12 +1752,34 @@ void pdkpass_ui_reminder_show(const pdkpass_reminder_entry_t *alert)
     pdkpass_sound_reminder_play();
 }
 
+void pdkpass_ui_reminder_show(const pdkpass_reminder_entry_t *alert)
+{
+    // A due reminder may have waited for the LVGL lock while ALERTS changed.
+    if (!s_screen || !alert || !pdkpass_reminder_enabled()) return;
+    s_reminder_is_lfc = false;
+    s_reminder_alert = *alert;
+    reminder_present();
+}
+
+void pdkpass_ui_lfc_reminder_show(size_t fixture_index)
+{
+    if (!s_screen || !pdkpass_reminder_enabled() ||
+        fixture_index >= lfc_table_count()) return;
+    s_reminder_is_lfc = true;
+    s_lfc_reminder_index = fixture_index;
+    reminder_present();
+}
+
 void pdkpass_ui_enter(bool battery_available)
 {
     (void)battery_available;
     s_last_activity = lv_tick_get();
     s_idle_stage = 0;
     pdkpass_state_init(&s_state);
+    // The landing card is chosen by render_home from the merged deck and the
+    // current clock, so nothing has to be seeded here; the bundled fixture
+    // snapshot always backs lfc_table(), so both kinds of card exist from the
+    // first frame.
     s_detail_default_pending = true;
     if (!pdkpass_season_snapshot(&s_season)) {
         memset(&s_season, 0, sizeof(s_season));
@@ -1798,14 +1935,12 @@ bool pdkpass_ui_season_update(void)
                                       ? s_season.driver_count - 1U
                                       : 0U;
     }
-    // A refreshed snapshot must still land on the current round, even when the
-    // clock is only the estimate restored from NVS.
-    if (s_time_valid || s_time_estimated) {
-        int64_t now = (int64_t)time(NULL);
-        size_t next = pdkpass_schedule_next_race(now, s_season.races,
-                                                 s_season.race_count);
-        pdkpass_state_set_home_race(&s_state, next, s_season.race_count);
-    }
+    // A refreshed snapshot must still land on the live event, even when the
+    // clock is only the estimate restored from NVS. The deck is rebuilt first so
+    // the cursor keeps pointing at the same real card after the calendar moved.
+    home_deck_rebuild();
+    pdkpass_state_reset_home(&s_state);
+    home_park();
     render();
     return true;
 }
@@ -1843,6 +1978,22 @@ void pdkpass_ui_key(bsp_btn_t btn, bsp_btn_ev_t ev)
         return;
     }
 
+    // The dashboard is one merged timeline. OK opens the round detail on a
+    // Formula 1 card, but a Liverpool fixture card carries its own detail page,
+    // so the fixture is intercepted here before the round state machine runs.
+    if (s_state.page == PDKPASS_PAGE_HOME && ev == BSP_BTN_CLICK &&
+        btn == BSP_BTN_OK) {
+        home_deck_rebuild();
+        home_park();
+        const pdkpass_deck_entry_t *entry = home_current();
+        if (entry && entry->kind == PDKPASS_DECK_MATCH) {
+            s_lfc_selected = entry->index;
+            s_state.page = PDKPASS_PAGE_LFC_DETAIL;
+            render();
+            return;
+        }
+    }
+
     pdkpass_input_t input;
     if (btn == BSP_BTN_OK && ev == BSP_BTN_LONG) {
         input = PDKPASS_INPUT_BACK;
@@ -1860,6 +2011,13 @@ void pdkpass_ui_key(bsp_btn_t btn, bsp_btn_ev_t ev)
         input = PDKPASS_INPUT_DOWN;
     } else {
         input = PDKPASS_INPUT_OK;
+    }
+
+    // The fixture detail page runs its own wrap-around navigation and is
+    // deliberately kept out of the Formula 1 state machine below.
+    if (s_state.page == PDKPASS_PAGE_LFC_DETAIL) {
+        if (lfc_handle_input(input)) render();
+        return;
     }
 
     pdkpass_state_t previous = s_state;
@@ -1942,8 +2100,12 @@ void pdkpass_ui_key(bsp_btn_t btn, bsp_btn_ev_t ev)
     }
     if (s_state.page == PDKPASS_PAGE_RESULTS)
         pdkpass_state_set_sessions(&s_state, race_session_mask(s_state.selected_race));
-    pdkpass_state_handle(&s_state, input,
-                         s_season.race_count, s_season.driver_count, s_team_standings.count);
+    // The dashboard walks one merged deck; keep its extent current so the model
+    // wraps Formula 1 rounds and Liverpool fixtures together.
+    if (s_state.page == PDKPASS_PAGE_HOME) home_deck_rebuild();
+    pdkpass_state_handle(&s_state, input, s_season.race_count,
+                         s_season.driver_count, s_team_standings.count,
+                         s_deck.count);
     if (s_state.page == PDKPASS_PAGE_RACE_DETAIL &&
         (previous.page == PDKPASS_PAGE_HOME || previous.page == PDKPASS_PAGE_CALENDAR))
         s_detail_default_pending = true;

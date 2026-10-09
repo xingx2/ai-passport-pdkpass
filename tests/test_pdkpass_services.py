@@ -656,15 +656,12 @@ int main(void) {
         source = production_source(ROOT / 'main/pdkpass_ui.c')
         code = PRELUDE + r"""
 #include "pdkpass_model.h"
-#include "pdkpass_schedule.h"
 static pdkpass_season_snapshot_t s_season;
 static pdkpass_team_snapshot_t s_team_standings;
 static pdkpass_state_t s_state;
 static int s_list_page;
-static bool s_time_valid,s_time_estimated,season_ready,teams_ready;
-static unsigned renders;
-static int schedule_calls;
-static size_t scheduled_race;
+static bool season_ready,teams_ready;
+static unsigned renders,deck_rebuilds,park_calls;
 bool pdkpass_season_snapshot(pdkpass_season_snapshot_t *out) {
  assert(out==&s_season);if(!season_ready)return false;
  out->race_count=2;out->driver_count=2;return true;
@@ -674,12 +671,9 @@ bool pdkpass_season_team_snapshot(pdkpass_team_snapshot_t *out) {
  out->count=2;return true;
 }
 static void render(void) {renders++;}
-size_t pdkpass_schedule_next_race(int64_t now,const pdkpass_race_t *races,size_t count) {
- (void)now;(void)races;schedule_calls++;return count?1U:0U;
-}
-void pdkpass_state_set_home_race(pdkpass_state_t *state,size_t race,size_t count) {
- (void)state;(void)count;scheduled_race=race;
-}
+static void home_deck_rebuild(void) {deck_rebuilds++;}
+static void home_park(void) {park_calls++;}
+void pdkpass_state_reset_home(pdkpass_state_t *state) {(void)state;}
 """
         code += function(source, 'bool pdkpass_ui_season_update(')
         code += r"""
@@ -689,13 +683,12 @@ int main(void) {
  season_ready=true;assert(!pdkpass_ui_season_update()&&renders==0);
  teams_ready=true;assert(pdkpass_ui_season_update()&&renders==1);
  assert(s_state.selected_race==1&&s_state.selected_driver==1&&s_state.selected_team==1);
- // Without any clock the round must not be guessed.
- assert(schedule_calls==0);
- // An NVS-restored estimate alone still positions the round on the next race.
- s_time_estimated=true;
+ // A refreshed snapshot re-parks the dashboard on the live event: the merged
+ // deck is rebuilt and the cursor re-centred on every successful refresh.
+ assert(deck_rebuilds==1&&park_calls==1);
  assert(pdkpass_ui_season_update()&&renders==2);
- assert(schedule_calls==1&&scheduled_race==1);
- puts("UI snapshot storage, busy-cache retry, clamp and estimated-clock round: PASS");
+ assert(deck_rebuilds==2&&park_calls==2);
+ puts("UI snapshot storage, busy-cache retry, clamp and re-park: PASS");
 }
 """
         compile_run(code)
@@ -795,6 +788,7 @@ static void pdkpass_ui_sync_status_update(void) {assert(locked);statuses++;}
 void pdkpass_season_set_network(bool online,bool valid) {(void)online;(void)valid;}
 static void pdkpass_results_set_online(bool online) {(void)online;}
 static void pdkpass_reminder_set_time_valid(bool valid) {(void)valid;}
+static void lfc_sync_set_network(bool online,bool time_valid) {(void)online;(void)time_valid;}
 static void pdkpass_results_season_changed(void) {}
 static void pdkpass_reminder_season_changed(void) {}
 static void pdkpass_sound_result_ready(void) {}

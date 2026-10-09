@@ -109,6 +109,8 @@ static void reconcile_calendar(void)
 
 bool pdkpass_reminder_enabled(void) { return atomic_load(&s_enabled); }
 
+bool pdkpass_reminder_time_valid(void) { return atomic_load(&s_time_valid); }
+
 void pdkpass_reminder_set_enabled(bool enabled)
 {
     atomic_store(&s_enabled, enabled);

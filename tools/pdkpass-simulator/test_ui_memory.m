@@ -6,6 +6,7 @@
 #undef main
 #include <assert.h>
 #include "ui_pixel.h"
+#include "pdkpass_model.h"
 #include "pdkpass_season_core.h"
 #include "src/misc/lv_text_private.h"
 static unsigned dark_timer_fired;
@@ -57,6 +58,17 @@ static lv_obj_t *find_label(lv_obj_t *obj, const char *text)
         strcmp(lv_label_get_text(obj), text) == 0) return obj;
     for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
         lv_obj_t *found = find_label(lv_obj_get_child(obj, i), text);
+        if (found) return found;
+    }
+    return NULL;
+}
+
+static lv_obj_t *find_label_containing(lv_obj_t *obj, const char *needle)
+{
+    if (lv_obj_check_type(obj, &lv_label_class) &&
+        strstr(lv_label_get_text(obj), needle)) return obj;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+        lv_obj_t *found = find_label_containing(lv_obj_get_child(obj, i), needle);
         if (found) return found;
     }
     return NULL;
@@ -267,7 +279,14 @@ int main(void)
         s_preview_year = 2026;
         pdkpass_ui_season_update();
         simulator_send_button(BSP_BTN_OK, BSP_BTN_LONG);
-        assert(find_label(lv_screen_active(), "UP/DN:RACE OK:VIEW"));
+        assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW") ||
+               find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
+        // The merged deck can land on a Liverpool card, so walk to Formula 1
+        // round one: the podium check below is stored against race index 0.
+        for (unsigned i = 0; i < 61 && !find_label(lv_screen_active(), "R1"); ++i)
+            simulator_send_button(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "R1"));
+        assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"));
         // A maximum-length podium name must occupy one line without clipping.
         [s_results_lock lock];
         for (size_t session = 0; session < PDKPASS_SESSION_COUNT; session++)
@@ -554,10 +573,25 @@ int main(void)
         simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG);
         assert(!s_reminder_sound_playing&&!find_label(lv_screen_active(),"ANY KEY TO DISMISS"));
         check_memory();
+        // The stress loop above stops on an arbitrary page, so pin the
+        // dashboard and the persistent toggles before checking the menu: these
+        // rows must survive a power cycle, not a lucky walk.
+        pdkpass_reminder_set_enabled(true);
+        pdkpass_sound_set_key_enabled(false);
+        for (unsigned i = 0; i < 8 &&
+             !(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW") ||
+               find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH")); ++i)
+            simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG);
+        assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW") ||
+               find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
         // Persistent toggles in the five-row network menu remain readable.
         simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG);
         assert(find_label(lv_screen_active(),"ALERTS: ON"));
         assert(find_label(lv_screen_active(),"KEY SOUND: OFF"));
+        // The Liverpool card is part of the single merged deck, so the menu no
+        // longer carries a per-card preference row.
+        assert(!find_label(lv_screen_active(),"HOME CARD:F1"));
+        assert(!find_label(lv_screen_active(),"HOME CARD:LFC"));
         const char *sync_rows[] = {"CAL SYNC NEVER", "RESULTS NEVER", "DRIVERS CACHE DATE?", "TEAMS CACHE DATE?"};
         for (unsigned row = 0; row < 4; row++) {
             lv_obj_t *label = find_label(lv_screen_active(), sync_rows[row]);
@@ -565,27 +599,72 @@ int main(void)
         }
         lv_obj_t *back = lv_obj_get_parent(find_label(lv_screen_active(), "BACK"));
         assert(lv_obj_get_y(back) + lv_obj_get_height(back) <= 191);
-        for(unsigned i=0;i<4;i++) {
-            lv_obj_t *label=find_label(lv_screen_active(),"ALERTS: ON");
-            assert(label);
-            if(lv_color_eq(lv_obj_get_style_bg_color(lv_obj_get_parent(label),0),
-                           lv_color_hex(0xFFD928))) break;
+        // Park the cursor on the trailing row, then step onto the first item, so
+        // every row below is reached in a fixed number of presses.
+        for (unsigned i = 0; i < PDKPASS_NETWORK_ITEMS; ++i) {
+            lv_obj_t *row = find_label(lv_screen_active(), "BACK");
+            assert(row);
+            if (lv_color_eq(lv_obj_get_style_bg_color(lv_obj_get_parent(row),0),
+                            lv_color_hex(0xFFD928))) break;
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         }
+        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // BACK -> WI-FI SETUP
+        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // -> RETRY WI-FI
+        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // -> ALERTS
+        assert(lv_color_eq(lv_obj_get_style_bg_color(
+                   lv_obj_get_parent(find_label(lv_screen_active(),"ALERTS: ON")),0),
+                   lv_color_hex(0xFFD928)));
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(!pdkpass_reminder_enabled());
         assert(find_label(lv_screen_active(),"ALERTS: OFF"));
         check_memory();
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(pdkpass_reminder_enabled());
-        // The KEY SOUND row (index 3) toggles in place; only the trailing BACK
-        // row leaves the menu.
-        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        // The KEY SOUND row toggles in place; only the trailing BACK row leaves.
+        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // -> KEY SOUND
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "KEY SOUND: ON"));
-        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // -> BACK
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(!find_label(lv_screen_active(), "ALERTS: ON"));
+        check_memory();
+        // The dashboard is one merged timeline: the 23 Formula 1 rounds and the
+        // 38 Liverpool fixtures in the order they happen. The counter proves
+        // both sources made it into the single deck.
+        assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW") ||
+               find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
+        assert(find_label_containing(lv_screen_active(), " / 61"));
+        check_memory();
+        // A full loop over the merged deck returns to the card it started on.
+        simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // enter browsing
+        lv_obj_t *counter = find_label_containing(lv_screen_active(), " / 61");
+        assert(counter);
+        char landing[16];
+        snprintf(landing, sizeof(landing), "%s", lv_label_get_text(counter));
+        for (unsigned i = 0; i < 61; ++i)
+            simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        counter = find_label_containing(lv_screen_active(), " / 61");
+        assert(counter && strcmp(landing, lv_label_get_text(counter)) == 0);
+        // Both card kinds are reachable, and each opens its own detail page: a
+        // Liverpool card opens the fixture, a Formula 1 card the round detail.
+        for (unsigned i = 0;
+             i < 61 && !find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"); ++i)
+            simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "UP/DN:MATCH HOLD:BACK"));
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK); // -> dashboard
+        check_memory();
+        for (unsigned i = 0;
+             i < 61 && !find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"); ++i)
+            simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"));
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "UP/DN OK:VIEW HOLD:BACK") ||
+               find_label(lv_screen_active(), "HOLD:BACK"));
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG); // -> dashboard
+        assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW") ||
+               find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
         check_memory();
         lv_mem_monitor_t memory;
         lv_mem_monitor(&memory);

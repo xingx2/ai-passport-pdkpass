@@ -11,6 +11,7 @@
 #include "pdkpass_ui.h"
 #include "pdkpass_reminder.h"
 #include "pdkpass_sound.h"
+#include "lfc_store.h"
 
 #include <stdbool.h>
 #include <stdint.h>

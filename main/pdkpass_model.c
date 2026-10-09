@@ -102,36 +102,33 @@ void pdkpass_state_init(pdkpass_state_t *state)
     state->detail_selected_session = PDKPASS_SESSION_COUNT;
     for (unsigned i = 0; i < PDKPASS_SESSION_COUNT; i++)
         state->detail_sessions[i] = PDKPASS_SESSION_COUNT;
-    state->home_race = 0;
+    state->home_card = 0;
     state->home_browsing = false;
-    state->season_complete = false;
+    state->deck_complete = false;
     state->network_selection = 0;
 }
 
-void pdkpass_state_set_home_race(pdkpass_state_t *state, size_t race_index,
-                                 size_t race_count)
+void pdkpass_state_set_home_card(pdkpass_state_t *state, size_t card,
+                                 size_t card_count)
 {
-    state->season_complete = race_index >= race_count;
-    state->home_race = state->season_complete ? 0 : race_index;
-    if (state->page == PDKPASS_PAGE_HOME && !state->home_browsing) {
-        state->selected_race = state->home_race;
-    }
+    state->deck_complete = card_count > 0U && card >= card_count;
+    state->home_card = state->deck_complete
+                           ? (card_count > 0U ? card_count - 1U : 0U)
+                           : card;
+    state->home_browsing = false;
 }
 
-void pdkpass_state_reset_home_race(pdkpass_state_t *state, size_t race_count)
+void pdkpass_state_reset_home(pdkpass_state_t *state)
 {
     state->home_browsing = false;
-    state->selected_race = state->season_complete
-                               ? (race_count > 0 ? race_count - 1 : 0)
-                               : state->home_race;
 }
 
 // Pure navigation state machine. UI rendering and hardware access intentionally
 // stay out of this function so every button path can be covered by host tests.
 void pdkpass_state_handle(pdkpass_state_t *state, pdkpass_input_t input,
-                          size_t race_count, size_t driver_count, size_t team_count)
+                          size_t race_count, size_t driver_count,
+                          size_t team_count, size_t card_count)
 {
-    pdkpass_page_t previous_page = state->page;
     switch (state->page) {
     case PDKPASS_PAGE_HOME:
         if (input == PDKPASS_INPUT_BACK) state->page = PDKPASS_PAGE_NETWORK;
@@ -139,16 +136,20 @@ void pdkpass_state_handle(pdkpass_state_t *state, pdkpass_input_t input,
         if (input == PDKPASS_INPUT_DOWN_LONG)
             state->page = PDKPASS_PAGE_TEAM_STANDINGS;
         if ((input == PDKPASS_INPUT_UP || input == PDKPASS_INPUT_DOWN) &&
-            race_count > 0) {
-            size_t current = state->season_complete && !state->home_browsing
-                                 ? race_count - 1 : state->selected_race;
-            state->selected_race = input == PDKPASS_INPUT_UP
-                                       ? wrap_previous(current, race_count)
-                                       : wrap_next(current, race_count);
+            card_count > 0U) {
+            // One flat walk over the merged timeline; the Formula 1 rounds and
+            // the Liverpool fixtures wrap together exactly like the rounds did.
+            size_t current = state->deck_complete && !state->home_browsing
+                                 ? card_count - 1U : state->home_card;
+            state->home_card = input == PDKPASS_INPUT_UP
+                                   ? wrap_previous(current, card_count)
+                                   : wrap_next(current, card_count);
             state->home_browsing = true;
         }
-        if (input == PDKPASS_INPUT_OK && race_count > 0 &&
-            (!state->season_complete || state->home_browsing)) {
+        // OK opens the round detail. A Liverpool card is intercepted by the UI,
+        // which owns the fixture selection, so it never reaches this branch.
+        if (input == PDKPASS_INPUT_OK && card_count > 0U &&
+            (!state->deck_complete || state->home_browsing)) {
             state->detail_origin = PDKPASS_PAGE_HOME;
             state->page = PDKPASS_PAGE_RACE_DETAIL;
         }
@@ -229,9 +230,15 @@ void pdkpass_state_handle(pdkpass_state_t *state, pdkpass_input_t input,
             state->page = PDKPASS_PAGE_RACE_DETAIL;
         }
         break;
+
+    case PDKPASS_PAGE_LFC_DETAIL:
+        // The fixture detail page is self-contained: its selection lives in the
+        // UI layer and lfc_handle_input() dispatches before this function runs,
+        // so the model stores no extra state and keeps the F1 round untouched.
+        break;
     }
-    if (previous_page != PDKPASS_PAGE_HOME && state->page == PDKPASS_PAGE_HOME &&
-        !state->home_browsing) {
-        pdkpass_state_reset_home_race(state, race_count);
-    }
+    // Coming back to the dashboard keeps the card the user was on, exactly as
+    // the round detail round-trip did before the deck was merged. The live event
+    // is reclaimed only when the screen sleeps (pdkpass_state_reset_home) or a
+    // refreshed season snapshot arrives.
 }

@@ -18,6 +18,9 @@
 #include "pdkpass_sync_policy.h"
 #include "pdkpass_ui.h"
 #include "pdkpass_ui_updates.h"
+#include "lfc_store.h"
+#include "lfc_reminder.h"
+#include "lfc_sync.h"
 
 static const char *TAG = "pdkpass";
 
@@ -31,10 +34,11 @@ static void wake_reminder_worker(void);
 
 static void on_network(const pdkpass_network_update_t *update)
 {
-    pdkpass_season_set_network(update->state == PDKPASS_NETWORK_ONLINE,
-                               update->time_valid);
-    pdkpass_results_set_online(update->state == PDKPASS_NETWORK_ONLINE);
+    bool online = update->state == PDKPASS_NETWORK_ONLINE;
+    pdkpass_season_set_network(online, update->time_valid);
+    pdkpass_results_set_online(online);
     pdkpass_reminder_set_time_valid(update->time_valid);
+    lfc_sync_set_network(online, update->time_valid);
     portENTER_CRITICAL(&s_updates_lock);
     pdkpass_ui_updates_network(&s_updates, update);
     portEXIT_CRITICAL(&s_updates_lock);
@@ -133,6 +137,8 @@ static void ui_worker(void *arg)
     bool monotonic_ready = false;
     bool alert_pending = false;
     pdkpass_reminder_entry_t alert;
+    bool lfc_alert_pending = false;
+    size_t lfc_alert_index = 0;
     for (;;) {
         dispatch_ui_updates();
         if (!monotonic_ready && bsp_lvgl_lock(500)) {
@@ -144,6 +150,17 @@ static void ui_worker(void *arg)
             if (alert.start_utc > (int64_t)time(NULL)) pdkpass_ui_reminder_show(&alert);
             bsp_lvgl_unlock();
             alert_pending = false;
+            battery_paused_for_dark = false;
+            next_battery = xTaskGetTickCount();
+        }
+        // The Liverpool kick-off notice rides the same worker, so it also wakes
+        // a dark display. It stays inert unless the Liverpool card is selected.
+        if (!lfc_alert_pending)
+            lfc_alert_pending = lfc_reminder_poll((int64_t)time(NULL), &lfc_alert_index);
+        if (lfc_alert_pending && bsp_lvgl_lock(500)) {
+            pdkpass_ui_lfc_reminder_show(lfc_alert_index);
+            bsp_lvgl_unlock();
+            lfc_alert_pending = false;
             battery_paused_for_dark = false;
             next_battery = xTaskGetTickCount();
         }
@@ -169,10 +186,14 @@ static void ui_worker(void *arg)
         uint32_t reminder_ms = pdkpass_reminder_wait_ms((int64_t)time(NULL));
         if (reminder_ms != UINT32_MAX && pdMS_TO_TICKS(reminder_ms) < wait)
             wait = pdMS_TO_TICKS(reminder_ms);
+        uint32_t lfc_ms = lfc_reminder_wait_ms((int64_t)time(NULL));
+        if (lfc_ms != UINT32_MAX && pdMS_TO_TICKS(lfc_ms) < wait)
+            wait = pdMS_TO_TICKS(lfc_ms);
         if (!wait) wait = 1;
         if (ui_updates_pending() && wait > pdMS_TO_TICKS(100))
             wait = pdMS_TO_TICKS(100);
-        if (alert_pending && wait > pdMS_TO_TICKS(100)) wait = pdMS_TO_TICKS(100);
+        if ((alert_pending || lfc_alert_pending) && wait > pdMS_TO_TICKS(100))
+            wait = pdMS_TO_TICKS(100);
         if (!monotonic_ready && wait > pdMS_TO_TICKS(1000))
             wait = pdMS_TO_TICKS(1000);
         if (xQueueReceive(s_keys, &key, wait) == pdTRUE && !key.reschedule && bsp_lvgl_lock(500)) {
@@ -216,6 +237,8 @@ void app_main(void)
                  esp_err_to_name(cache_err));
         return; // No service may access an unsuccessfully initialized partition.
     }
+    lfc_fixtures_start(); // Last refreshed fixture table, or the bundled one.
+    lfc_reminder_init();  // Last announced Liverpool kick-off, same partition.
     pdkpass_sync_status_init(on_data_status);
     if (pdkpass_reminder_init(wake_reminder_worker) != ESP_OK)
         ESP_LOGW(TAG, "Session reminders unavailable");
@@ -261,4 +284,7 @@ void app_main(void)
         on_network(&failed);
     }
 
+    // Started last: it only wakes up once the network reports a usable clock.
+    if (lfc_sync_start() != ESP_OK)
+        ESP_LOGW(TAG, "Liverpool fixture refresh unavailable");
 }

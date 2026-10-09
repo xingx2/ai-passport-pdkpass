@@ -37,4 +37,10 @@ void pdkpass_ui_sync_status_update(void);
 // Caller holds LVGL lock. Shows a 15-second notice, waking a sleeping display
 // and restoring its previous page and sleep state afterwards.
 void pdkpass_ui_reminder_show(const pdkpass_reminder_entry_t *alert);
+// Show the kick-off notice for a bundled Liverpool fixture. Shares the reminder
+// layer, sound and timeout with the Formula 1 alert. Caller holds LVGL lock.
+void pdkpass_ui_lfc_reminder_show(size_t fixture_index);
+// Repaint the Liverpool views after a background refresh replaced the fixture
+// table. Caller holds the LVGL lock; safe on any page.
+void pdkpass_ui_lfc_update(void);
 void pdkpass_ui_reminder_dismiss(void);

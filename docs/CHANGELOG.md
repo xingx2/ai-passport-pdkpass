@@ -6,7 +6,13 @@
 
 ## Unreleased
 
-- Open on the race that is actually next: the home round now follows the best clock available, so a boot with only the NVS-restored (estimated) time lands on the upcoming round instead of staying at R1, and the first synchronized time corrects it. The estimate never switches the season and never fires a session reminder. With no usable time at all (first boot or a full reflash) the home still shows `SYNC CLOCK` and R1 until one synchronization succeeds.
+- Merge the Liverpool fixtures into the dashboard: the Formula 1 rounds and all 38 Premier League matches become one timeline of 61 cards ordered by when they happen, so the arrow keys walk rounds and matches together and the on-card counter covers the whole deck. The carousel parks on the next event on boot instead of a fixed card, and OK opens the card's own detail page — the round's sessions and results on a Formula 1 card, the fixture detail (home or away, opponent, venue, Beijing kick-off and the final score once played) on a Liverpool card. Background colours come from the clubs themselves: Liverpool red at Anfield, the opponent's primary colour away, each with a readable text colour.
+
+- Refresh the Liverpool fixtures from ESPN's public core API once Wi-Fi and a synchronized clock are available. Only matches whose window has closed are re-checked, at most four per pass and no more often than every six hours; changed results and moved kick-offs are persisted and repaint the Liverpool views without a restart. The refresh reads the API's small per-resource documents because the firmware's HTTP client cannot decompress gzip and the scoreboard/summary documents run to tens of kilobytes.
+
+- Ring ten minutes before a Liverpool kick-off when alerts are on, reusing the session reminder's notice, sound, 15-second timeout and dark-display wake. Alerts stay gated on a synchronized clock so a restored estimate cannot ring early, and holding OK on the dashboard still opens `NETWORK` as before.
+
+- Open on the event that is actually next: the merged carousel now follows the best clock available, so a boot with only the NVS-restored (estimated) time lands on the upcoming card instead of staying on the first one, and the first synchronized time corrects it. The estimate never switches the season and never fires a session reminder. With no usable time at all (first boot or a full reflash) the home still shows `SYNC CLOCK` and the first card until one synchronization succeeds.
 
 - Add a button-sound switch: the `NETWORK` menu gains `KEY SOUND: ON/OFF`, off by default, toggled and saved with OK. While off, key presses stay silent; the session reminder ringtone and the result cue are unaffected. The setting survives upgrades and restarts.
 

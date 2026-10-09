@@ -14,6 +14,9 @@ typedef enum {
     PDKPASS_PAGE_NETWORK,
     PDKPASS_PAGE_NETWORK_PROGRESS,
     PDKPASS_PAGE_NETWORK_CONFIRM,
+    // Liverpool fixture detail. It is opened straight from its card on the
+    // dashboard and keeps its own selection, so the Formula 1 state is untouched.
+    PDKPASS_PAGE_LFC_DETAIL,
 } pdkpass_page_t;
 
 typedef enum {
@@ -48,17 +51,23 @@ typedef struct {
     pdkpass_session_kind_t detail_sessions[PDKPASS_SESSION_COUNT];
     size_t detail_count;
     pdkpass_session_kind_t detail_selected_session;
-    // Current weekend stays separate from a manually browsed home round.
-    size_t home_race;
+    // Dashboard carousel cursor. The deck is one timeline of Formula 1 rounds
+    // and Liverpool fixtures; it lives in the UI because it needs the live
+    // season and fixture tables, while the walk itself stays here so every
+    // button path can be covered by host tests.
+    size_t home_card;
     bool home_browsing;
-    bool season_complete;
+    bool deck_complete;
     unsigned network_selection;
 } pdkpass_state_t;
 
 void pdkpass_state_init(pdkpass_state_t *state);
-void pdkpass_state_set_home_race(pdkpass_state_t *state, size_t race_index,
-                                 size_t race_count);
-void pdkpass_state_reset_home_race(pdkpass_state_t *state, size_t race_count);
+// Park the dashboard on `card`. An index at or past `card_count` means the whole
+// deck has been played, and browsing is cleared so the next tick re-centers.
+void pdkpass_state_set_home_card(pdkpass_state_t *state, size_t card,
+                                 size_t card_count);
+// Send the dashboard back to the live event: the next render parks it again.
+void pdkpass_state_reset_home(pdkpass_state_t *state);
 // An empty mask selects PDKPASS_SESSION_COUNT; navigation remains bounded.
 void pdkpass_state_set_sessions(pdkpass_state_t *state, uint32_t mask);
 // Sort known start times, retain conventional slots for unknown times, and only
@@ -67,5 +76,8 @@ void pdkpass_state_set_detail_sessions(pdkpass_state_t *state, uint32_t mask,
     const pdkpass_detail_session_t sessions[PDKPASS_SESSION_COUNT],
     bool choose_default, bool time_valid, int64_t now_utc);
 size_t pdkpass_state_detail_index(const pdkpass_state_t *state);
+// `card_count` is the size of the dashboard deck, not the number of races; the
+// two differ because the deck also holds the Liverpool fixtures.
 void pdkpass_state_handle(pdkpass_state_t *state, pdkpass_input_t input,
-                          size_t race_count, size_t driver_count, size_t team_count);
+                          size_t race_count, size_t driver_count,
+                          size_t team_count, size_t card_count);

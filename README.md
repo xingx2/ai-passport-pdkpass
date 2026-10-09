@@ -162,6 +162,36 @@ silent. This switch is independent of `ALERTS`: turning reminders off does not
 mute button cues, and turning button cues off does not affect the 80% session
 reminder ringtone.
 
+## Liverpool fixtures
+
+The dashboard is one merged timeline. Every Formula 1 round and every Liverpool
+Premier League fixture is a card on the same carousel, ordered by when it
+happens: 23 rounds and 38 matches, 61 cards in all. Up and down step through
+them, the counter under the card shows the position in the whole deck, and
+holding the arrows still opens the driver and team standings.
+
+On boot the carousel parks on the event that is next, so the device opens on
+whatever happens first rather than on a fixed card. OK opens the detail page for
+the card on screen: on a Formula 1 round that is the session list and results, on
+a Liverpool match the fixture detail — home or away, the opponent, the venue, the
+Beijing kick-off and the final score once the match is complete. Holding OK goes
+back. The background takes the club's own colour: Liverpool red at Anfield, the
+opponent's primary colour away, with a readable text colour chosen for each.
+
+The fixture snapshot is compiled into the firmware, so the list works with no
+network at all. Once Wi-Fi is connected and the clock has synchronized, a
+background refresh re-checks each match whose window has closed and saves any
+changed result or moved kick-off. It reads ESPN's public core API in small
+per-resource documents; the larger scoreboard and summary documents are avoided
+because the firmware's HTTP client cannot decompress gzip. A pass checks at most
+four matches and no more often than every six hours.
+
+When alerts are on, a Liverpool match rings ten minutes before kick-off through
+the same notice, sound and 15-second timeout as a session reminder. Like the
+Formula 1 reminders this needs a synchronized clock, so a restored estimate can
+never ring early. Live-device network behaviour and the on-screen result of a
+refresh still need testing.
+
 ## Power saving
 
 The display dims after 30 seconds and turns its backlight off after 90 seconds.

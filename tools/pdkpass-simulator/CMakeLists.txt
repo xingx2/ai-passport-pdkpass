@@ -34,6 +34,7 @@ set(PDKPASS_UI_SOURCES
     "${PDKPASS_REPO}/main/pdkpass_ui.c"
     "${PDKPASS_REPO}/main/pdkpass_wifi_qr.c"
     "${PDKPASS_REPO}/main/pdkpass_model.c"
+    "${PDKPASS_REPO}/main/pdkpass_deck.c"
     "${PDKPASS_REPO}/main/pdkpass_results_core.c"
     "${PDKPASS_REPO}/main/pdkpass_reminder_core.c"
     "${PDKPASS_REPO}/main/pdkpass_schedule.c"
@@ -42,6 +43,10 @@ set(PDKPASS_UI_SOURCES
     "${PDKPASS_REPO}/main/pdkpass_calendar.c"
     "${PDKPASS_REPO}/main/pdkpass_theme.c"
     "${PDKPASS_REPO}/main/pdkpass_tracks.c"
+    "${PDKPASS_REPO}/main/lfc_data.c"
+    "${PDKPASS_REPO}/main/lfc_schedule.c"
+    "${PDKPASS_REPO}/main/lfc_table.c"
+    "${PDKPASS_REPO}/main/lfc_theme.c"
 )
 
 find_library(COCOA_FRAMEWORK Cocoa REQUIRED)

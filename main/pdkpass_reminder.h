@@ -14,6 +14,9 @@ uint32_t pdkpass_reminder_wait_ms(int64_t now);
 // These settings calls are non-blocking and may run under the LVGL lock.
 bool pdkpass_reminder_enabled(void);
 void pdkpass_reminder_set_enabled(bool enabled);
+// Whether the clock has been synchronized this boot. Shared with the Liverpool
+// kick-off alerts so both reminder kinds trust the same clock.
+bool pdkpass_reminder_time_valid(void);
 
 // Copy a discovered round schedule regardless of whether reminders are enabled.
 // Non-blocking under the LVGL lock; false means no matching schedule available.

@@ -34,9 +34,26 @@ run_static_checks() {
         -o "${test_dir}/test_pdkpass_model"
     "${test_dir}/test_pdkpass_model"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_pdkpass_deck.c main/pdkpass_deck.c \
+        -o "${test_dir}/test_pdkpass_deck"
+    "${test_dir}/test_pdkpass_deck"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_pdkpass_schedule.c main/pdkpass_schedule.c main/pdkpass_data.c \
         -o "${test_dir}/test_pdkpass_schedule"
     "${test_dir}/test_pdkpass_schedule"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_lfc_schedule.c main/lfc_schedule.c main/lfc_data.c \
+        main/lfc_table.c main/lfc_theme.c \
+        -o "${test_dir}/test_lfc_schedule"
+    "${test_dir}/test_lfc_schedule"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_lfc_reminder.c main/lfc_reminder_core.c main/lfc_data.c \
+        main/lfc_table.c -o "${test_dir}/test_lfc_reminder"
+    "${test_dir}/test_lfc_reminder"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_lfc_sync.c main/lfc_sync_core.c \
+        -o "${test_dir}/test_lfc_sync"
+    "${test_dir}/test_lfc_sync"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain -Itools/pdkpass-simulator/stubs \
         tests/test_pdkpass_calendar.c main/pdkpass_calendar.c main/pdkpass_data.c \
         main/pdkpass_tracks.c main/pdkpass_schedule.c main/pdkpass_season_core.c \
