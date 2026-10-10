@@ -895,8 +895,9 @@ static void home_arm_clock(void)
     lv_timer_reset(s_clock_timer);
 }
 
-// One Formula 1 round on the shared dashboard deck. `position` and `total` are
-// the deck counter, so a round card and a fixture card read alike.
+// One Formula 1 round on the shared dashboard deck. `position` and `total` count
+// within the Formula 1 season alone, so this card reads "16 / 23"; the Liverpool
+// card counts its own competition the same way rather than sharing one extent.
 static void render_home_race(size_t race_index, size_t position, size_t total)
 {
     const pdkpass_race_t *race = &s_season.races[race_index];
@@ -971,10 +972,13 @@ static void render_home(void)
         return;
     }
     s_home_shown = s_state.home_card;
+    // The carousel is one merged timeline, but the counter is not: each card
+    // counts within its own competition, so a Formula 1 card reads "n / 23" and
+    // a Liverpool card "n / 38". The deck position is deliberately not shown.
     if (entry->kind == PDKPASS_DECK_MATCH)
-        render_home_match(entry->index, s_state.home_card, s_deck.count);
+        render_home_match(entry->index, entry->index, lfc_table_count());
     else
-        render_home_race(entry->index, s_state.home_card, s_deck.count);
+        render_home_race(entry->index, entry->index, s_season.race_count);
     home_arm_clock();
 }
 

@@ -167,8 +167,9 @@ reminder ringtone.
 The dashboard is one merged timeline. Every Formula 1 round and every Liverpool
 Premier League fixture is a card on the same carousel, ordered by when it
 happens: 23 rounds and 38 matches, 61 cards in all. Up and down step through
-them, the counter under the card shows the position in the whole deck, and
-holding the arrows still opens the driver and team standings.
+them, and holding the arrows still opens the driver and team standings. The
+counter under the card counts within the competition that card belongs to, so a
+Formula 1 round reads `16 / 23` while a Liverpool match reads `6 / 38`.
 
 On boot the carousel parks on the event that is next, so the device opens on
 whatever happens first rather than on a fixed card. OK opens the detail page for

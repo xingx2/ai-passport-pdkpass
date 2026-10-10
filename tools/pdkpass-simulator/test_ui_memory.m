@@ -365,7 +365,15 @@ int main(void)
         assert(find_label(lv_screen_active(), "RACE"));
         simulator_send_button(BSP_BTN_OK, BSP_BTN_LONG);
         simulator_send_button(BSP_BTN_OK, BSP_BTN_LONG); // detail -> home
-        simulator_send_button(BSP_BTN_DOWN, BSP_BTN_CLICK); // home R1 -> R2
+        // The merged deck interleaves Liverpool fixtures, so the card after R1 is
+        // not always R2: a fixture can sort between them. The simulator also
+        // derives the round boundaries from the wall clock, so the neighbours
+        // change from day to day. Walk to the next Formula 1 round instead of
+        // counting presses, keeping the sprint check pinned to race index 1.
+        for (unsigned i = 0;
+             i < 61 && !find_label(lv_screen_active(), "R2"); ++i)
+            simulator_send_button(BSP_BTN_DOWN, BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "R2"));
         for (unsigned i = 0; i < PDKPASS_SESSION_COUNT; i++)
             s_results[1][i].status = PDKPASS_RESULT_UNKNOWN;
         simulator_send_button(BSP_BTN_OK, BSP_BTN_CLICK); // home -> detail
@@ -403,7 +411,12 @@ int main(void)
         simulator_send_button(BSP_BTN_OK, BSP_BTN_LONG);
         assert(!find_label(lv_screen_active(), "NO SESSION")); // no absent detail rows
         simulator_send_button(BSP_BTN_OK, BSP_BTN_LONG); // detail -> home
-        simulator_send_button(BSP_BTN_UP, BSP_BTN_CLICK); // home R2 -> R1
+        // Walking backwards has the same problem as forwards, so step until the
+        // round one card is on screen rather than assuming it is the neighbour.
+        for (unsigned i = 0;
+             i < 61 && !find_label(lv_screen_active(), "R1"); ++i)
+            simulator_send_button(BSP_BTN_UP, BSP_BTN_CLICK);
+        assert(find_label(lv_screen_active(), "R1"));
         for (unsigned i = 0; i < PDKPASS_SESSION_COUNT; i++)
             s_results[0][i].status = PDKPASS_RESULT_NOT_HELD;
         sample->status = PDKPASS_RESULT_READY;
@@ -629,21 +642,23 @@ int main(void)
         assert(!find_label(lv_screen_active(), "ALERTS: ON"));
         check_memory();
         // The dashboard is one merged timeline: the 23 Formula 1 rounds and the
-        // 38 Liverpool fixtures in the order they happen. The counter proves
-        // both sources made it into the single deck.
+        // 38 Liverpool fixtures in the order they happen. The counter stays per
+        // competition, so it reads "n / 23" or "n / 38" and never "n / 61".
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW") ||
                find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
-        assert(find_label_containing(lv_screen_active(), " / 61"));
+        assert(find_label_containing(lv_screen_active(), " / 23") ||
+               find_label_containing(lv_screen_active(), " / 38"));
+        assert(!find_label_containing(lv_screen_active(), " / 61"));
         check_memory();
         // A full loop over the merged deck returns to the card it started on.
         simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // enter browsing
-        lv_obj_t *counter = find_label_containing(lv_screen_active(), " / 61");
+        lv_obj_t *counter = find_label_containing(lv_screen_active(), " / ");
         assert(counter);
         char landing[16];
         snprintf(landing, sizeof(landing), "%s", lv_label_get_text(counter));
         for (unsigned i = 0; i < 61; ++i)
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
-        counter = find_label_containing(lv_screen_active(), " / 61");
+        counter = find_label_containing(lv_screen_active(), " / ");
         assert(counter && strcmp(landing, lv_label_get_text(counter)) == 0);
         // Both card kinds are reachable, and each opens its own detail page: a
         // Liverpool card opens the fixture, a Formula 1 card the round detail.
@@ -651,6 +666,8 @@ int main(void)
              i < 61 && !find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"); ++i)
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
+        // A Liverpool card counts the Premier League season, not the deck.
+        assert(find_label_containing(lv_screen_active(), " / 38"));
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "UP/DN:MATCH HOLD:BACK"));
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK); // -> dashboard
@@ -659,6 +676,8 @@ int main(void)
              i < 61 && !find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"); ++i)
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"));
+        // A Formula 1 card counts the 23-round season, not the deck.
+        assert(find_label_containing(lv_screen_active(), " / 23"));
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "UP/DN OK:VIEW HOLD:BACK") ||
                find_label(lv_screen_active(), "HOLD:BACK"));

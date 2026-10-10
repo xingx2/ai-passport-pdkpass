@@ -41,9 +41,9 @@ static void lfc_set_status(uint32_t background)
 
 // One dashboard card for a Liverpool fixture, laid out exactly like the Formula
 // 1 card: matchday and side, the opponent, then the result once the match is
-// complete or the Beijing kick-off while it is still ahead. `position` is the
-// card's place in the shared dashboard deck, not the matchday, so the counter
-// and the progress bar read the same on both kinds of card.
+// complete or the Beijing kick-off while it is still ahead. `position` and
+// `total` count within the Premier League season alone, so this card reads
+// "6 / 38" instead of borrowing the merged deck's extent.
 static void render_home_match(size_t index, size_t position, size_t total)
 {
     if (index >= lfc_table_count()) return;
