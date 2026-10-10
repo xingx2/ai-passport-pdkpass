@@ -24,6 +24,10 @@ void pdkpass_sync_hold(pdkpass_sync_service_t service, bool held);
 typedef enum {
     PDKPASS_SYNC_STATUS_CALENDAR, PDKPASS_SYNC_STATUS_RESULTS,
     PDKPASS_SYNC_STATUS_DRIVERS, PDKPASS_SYNC_STATUS_TEAMS,
+    // The Liverpool fixture refresh is a separate service from the Formula 1
+    // ones, but it stamps the same day-level record so the settings screen can
+    // report when the Premier League table last came back from ESPN.
+    PDKPASS_SYNC_STATUS_PREMIER,
     PDKPASS_SYNC_STATUS_COUNT
 } pdkpass_sync_status_t;
 

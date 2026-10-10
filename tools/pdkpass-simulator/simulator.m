@@ -621,6 +621,10 @@ int64_t pdkpass_sync_last_success(pdkpass_sync_status_t service)
     return 0;
 }
 
+// The manual Premier League refresh is a firmware service. The preview only has
+// to satisfy the link; the detail page's OK key calls it.
+void lfc_sync_request(void) {}
+
 // UI preview only: radio/timers are exercised by firmware service tests.
 esp_err_t pdkpass_network_request(pdkpass_network_command_t command)
 {

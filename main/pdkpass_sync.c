@@ -9,7 +9,7 @@ static pdkpass_sync_policy_t s_policy;
 static int64_t s_last_success[PDKPASS_SYNC_STATUS_COUNT];
 static void (*s_status_callback)(void);
 static const char *const s_status_keys[PDKPASS_SYNC_STATUS_COUNT] = {
-    "calendar", "results", "drivers", "teams",
+    "calendar", "results", "drivers", "teams", "premier",
 };
 
 void pdkpass_sync_status_init(void (*callback)(void))

@@ -10,6 +10,7 @@
 #include "lfc_sync_core.h"
 #include "lfc_table.h"
 #include "pdkpass_http.h"
+#include "pdkpass_sync_policy.h"
 #include "pdkpass_ui.h"
 
 #include <stdio.h>
@@ -45,6 +46,10 @@ static volatile bool s_online, s_time_valid;
 static volatile bool s_pressed;
 static int64_t s_last_success;
 static int64_t s_last_attempt;
+// Set by any successful document read in the current pass. The settings screen
+// reports the last day the fixture table came back from ESPN, so a pass that
+// only found nothing new still counts once the radio answered.
+static bool s_pass_contacted;
 
 // Only this worker touches the candidate copy, and it is three kilobytes, so it
 // lives in .bss rather than on the worker's stack.
@@ -54,7 +59,11 @@ static bool sync_get(const char *url, size_t limit, char **body)
 {
     *body = NULL;
     if (pdkpass_http_expired()) return false;
-    return pdkpass_http_get(url, limit, body) == ESP_OK;
+    if (pdkpass_http_get(url, limit, body) != ESP_OK) return false;
+    // A returned document proves the round trip worked even when the payload
+    // carries nothing usable, which is what the status stamp records.
+    s_pass_contacted = true;
+    return true;
 }
 
 // The competition's competitors page names both sides, which is how the refresh
@@ -154,6 +163,7 @@ static void sync_once(int64_t now)
     size_t count = 0;
     if (!lfc_table_copy(s_candidate, LFC_MAX_FIXTURES, &count)) return;
     s_last_attempt = now;
+    s_pass_contacted = false;
     if (!pdkpass_http_begin_until(esp_timer_get_time() + LFC_SYNC_HTTP_DEADLINE_US))
         return;
 
@@ -180,6 +190,10 @@ static void sync_once(int64_t now)
         if (lfc_sync_apply(s_candidate, count, &event)) changed = true;
     }
     pdkpass_http_end();
+    // Stamp the status before the early return: the settings screen tracks the
+    // last successful contact, not the last time a fixture actually changed.
+    if (s_pass_contacted)
+        pdkpass_sync_mark_success(PDKPASS_SYNC_STATUS_PREMIER, now);
     if (!changed) return;
 
     // Flash first, then publish: a redraw must never wait on NVS, and the next

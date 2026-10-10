@@ -1,7 +1,7 @@
 // Private implementation: included by the owning service, with its existing lock and worker.
 static void render_wifi_setup_info(void)
 {
-    set_title("PDKPASS WIFI");
+    set_title("FORMULA 1 WIFI");
     set_status(s_network_state == PDKPASS_NETWORK_CONNECTING ? "CONNECTING" : "SETUP MODE", UI_RED);
     content_reset(UI_PAPER, 0xE6E7DA);
 
@@ -31,7 +31,7 @@ static bool render_wifi_setup_scan(void)
     if (!pdkpass_wifi_qr_payload(payload, sizeof(payload),
                                   s_setup_ssid, s_setup_password)) return false;
 
-    set_title("PDKPASS WIFI");
+    set_title("FORMULA 1 WIFI");
     set_status(s_network_state == PDKPASS_NETWORK_CONNECTING ? "CONNECTING" : "SETUP MODE", UI_RED);
     content_reset(UI_PAPER, 0xE6E7DA);
     make_center_label(s_content, "SCAN TO CONNECT", 0, 4, INNER_W,
@@ -66,8 +66,10 @@ static void render_wifi_setup(void)
 static void format_sync_line(pdkpass_sync_status_t service, unsigned season_year,
                              int64_t last, bool cached, char *line, size_t size)
 {
-    static const char *const labels[] = {"CAL SYNC", "RESULTS", "DRIVERS", "TEAMS"};
-    static const char *const cache_labels[] = {"CAL", "RESULT", "DRIVERS", "TEAMS"};
+    static const char *const labels[] = {"CAL SYNC", "RESULTS", "DRIVERS",
+                                         "TEAMS", "PL"};
+    static const char *const cache_labels[] = {"CAL", "RESULT", "DRIVERS",
+                                               "TEAMS", "PL"};
     if ((unsigned)service >= PDKPASS_SYNC_STATUS_COUNT) { if (size) line[0] = '\0'; return; }
     const char *label = labels[service];
     bool other_season = false;
@@ -97,20 +99,31 @@ static void format_sync_line(pdkpass_sync_status_t service, unsigned season_year
 
 static void render_network_menu(void)
 {
-    set_title("NETWORK");
-    set_status(s_network_state == PDKPASS_NETWORK_ONLINE ? "WI-FI CONNECTED" : "WI-FI OPTIONS", UI_SKY);
+    set_title("SETTINGS");
+    // The second header line names the page rather than repeating the Wi-Fi
+    // state the dashboard ticket already carries.
+    set_status("OPTIONS", UI_SKY);
     content_reset(UI_SKY, UI_SKY_DARK);
     for (unsigned i = 0; i < PDKPASS_SYNC_STATUS_COUNT; i++) {
         pdkpass_sync_status_t service = (pdkpass_sync_status_t)i;
-        bool cached = service == PDKPASS_SYNC_STATUS_CALENDAR ? pdkpass_season_has_cached_data() :
-                      service == PDKPASS_SYNC_STATUS_RESULTS ? pdkpass_results_has_cached_data() :
-                      service == PDKPASS_SYNC_STATUS_DRIVERS ? s_season.driver_count > 0 :
-                      s_team_standings.count > 0;
+        const bool premier = service == PDKPASS_SYNC_STATUS_PREMIER;
+        // The bundled fixture snapshot always exists, so `cached` would report
+        // it as if it had been fetched. The Premier League row therefore only
+        // separates "synced on <date>" from "never".
+        bool cached = !premier &&
+                      (service == PDKPASS_SYNC_STATUS_CALENDAR ? pdkpass_season_has_cached_data() :
+                       service == PDKPASS_SYNC_STATUS_RESULTS ? pdkpass_results_has_cached_data() :
+                       service == PDKPASS_SYNC_STATUS_DRIVERS ? s_season.driver_count > 0 :
+                       s_team_standings.count > 0);
         char line[32];
-        format_sync_line(service, s_season.year,
+        // The Premier League season spans two calendar years, so the Formula 1
+        // season-year mismatch check does not apply to its row.
+        format_sync_line(service, premier ? 0U : s_season.year,
                          pdkpass_sync_last_success(service), cached,
                          line, sizeof(line));
-        make_center_label(s_content, line, 0, 2 + (int)i * 14, INNER_W,
+        // Five rows on a 13-pixel pitch end at y=66, which leaves the action
+        // cards below them untouched.
+        make_center_label(s_content, line, 0, 2 + (int)i * 13, INNER_W,
                           &lv_font_unscii_8, UI_PAPER);
     }
     const char *titles[PDKPASS_NETWORK_ITEMS] = {"WI-FI SETUP", "RETRY WI-FI",
@@ -120,14 +133,20 @@ static void render_network_menu(void)
     for (unsigned i = 0; i < PDKPASS_NETWORK_ITEMS; i++) {
         bool selected = s_state.network_selection == i;
         uint32_t ink = selected ? UI_INK : UI_SKY_DARK;
-        // Five rows share the fixed-height menu: a slightly shorter card and
-        // gap keep every row and the hint inside the 191 px content area.
-        lv_obj_t *card = make_card(s_content, 5, 55 + (int)i * 27, 200, 25,
+        // Five action rows share the panel with the five sync lines above them.
+        // The panel spends 7 px on its border and padding at each edge, so the
+        // rows have 177 px to work with: the sync block ends at y=66, and a
+        // 19 px card on a 21 px pitch runs 70..173, clear of the bottom edge
+        // instead of over it.
+        lv_obj_t *card = make_card(s_content, 5, 70 + (int)i * 21, 200, 19,
                                    selected ? UI_YELLOW : UI_PAPER, 2);
         s_network_cards[i] = card;
-        // One centered action per card leaves vertical padding and a clear
-        // gap between the menu rows.
-        make_center_label(card, titles[i], 2, 4, 192, &lv_font_unscii_16, ink);
+        // The rows use the body face, the same one as the sync lines above and
+        // the calendar rows: the 16-pixel face cannot hold `KEY SOUND: OFF`
+        // (224 px in a 186 px card), and that row used to lose its first K and
+        // last F to the clip edge. Squeezing it with a transform instead would
+        // cost a render layer of roughly 7 KB on a 64 KB LVGL pool.
+        make_center_label(card, titles[i], 2, 4, 192, &lv_font_unscii_8, ink);
     }
     set_hint("UP/DN OK:GO HOLD:BACK");
 }

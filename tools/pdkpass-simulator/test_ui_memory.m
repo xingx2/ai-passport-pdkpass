@@ -23,26 +23,58 @@ bool pdkpass_reminder_round_schedule(unsigned year, int32_t meeting_key,
 }
 static void dark_timer(lv_timer_t *timer) { (void)timer; dark_timer_fired++; }
 
+// A wrapped label breaks between words, so its single-line width is larger than
+// its box by design; every word still has to fit the width on its own.
+static void check_wrapped_words(const char *text, const lv_font_t *font,
+                                int32_t width)
+{
+    char word[64];
+    size_t n = 0;
+    for (const char *p = text;; p++) {
+        if (*p != ' ' && *p != '\0') {
+            if (n + 1 < sizeof(word)) word[n++] = *p;
+            continue;
+        }
+        if (n) {
+            word[n] = '\0';
+            lv_point_t size;
+            lv_text_get_size(&size, word, font, 0, 0, LV_COORD_MAX,
+                             LV_TEXT_FLAG_NONE);
+            assert(size.x <= width);
+            n = 0;
+        }
+        if (*p == '\0') break;
+    }
+}
+
 static void check_body_text(lv_obj_t *obj)
 {
     if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) return;
     if (lv_obj_check_type(obj, &lv_label_class)) {
         const lv_font_t *font = lv_obj_get_style_text_font(obj, 0);
+        const char *text = lv_label_get_text(obj);
         if (font->line_height == 14) {
-            const char *text = lv_label_get_text(obj);
             uint32_t offset = 0, letter;
             while ((letter = lv_text_encoded_next(text, &offset)) != 0) {
                 lv_font_glyph_dsc_t glyph = {0};
                 assert(lv_font_get_glyph_dsc(font, &glyph, letter, 0));
                 assert(!glyph.is_placeholder);
             }
+        }
+        if (lv_label_get_long_mode(obj) == LV_LABEL_LONG_WRAP) {
+            // A wrapped label breaks between words, so its single-line width is
+            // larger than its box by design; every word still has to fit the
+            // width on its own. Applies to any face, including the 16-pixel one
+            // the dashboard uses for a long club name.
+            check_wrapped_words(text, font, lv_obj_get_content_width(obj));
+        } else if (font->line_height == 14) {
             lv_point_t size;
-            lv_text_get_size(&size, lv_label_get_text(obj), font,
+            lv_text_get_size(&size, text, font,
                              lv_obj_get_style_text_letter_space(obj, 0), 0,
                              LV_COORD_MAX, LV_TEXT_FLAG_NONE);
             if (size.x > lv_obj_get_content_width(obj)) {
                 fprintf(stderr, "Clipped body text: %s (%ld > %ld)\n",
-                        lv_label_get_text(obj), (long)size.x,
+                        text, (long)size.x,
                         (long)lv_obj_get_content_width(obj));
                 abort();
             }
@@ -72,6 +104,31 @@ static lv_obj_t *find_label_containing(lv_obj_t *obj, const char *needle)
         if (found) return found;
     }
     return NULL;
+}
+
+// No label may run past the panel it is drawn in. Long values are drawn with a
+// face that fits instead, so a card never loses the first or last glyph of a
+// name to the clip edge.
+static void check_labels_within(lv_obj_t *obj, const lv_area_t *limits)
+{
+    if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) return;
+    if (lv_obj_check_type(obj, &lv_label_class)) {
+        lv_area_t box;
+        lv_obj_get_coords(obj, &box);
+        int32_t scale = lv_obj_get_style_transform_scale_x(obj, 0);
+        if (scale <= 0) scale = 256;
+        int32_t pivot = lv_obj_get_style_transform_pivot_x(obj, 0);
+        int32_t left = box.x1 + pivot - pivot * scale / 256;
+        int32_t right = left + lv_area_get_width(&box) * scale / 256;
+        if (left < limits->x1 || right > limits->x2) {
+            fprintf(stderr, "Label outside the panel: %s (%ld..%ld in %ld..%ld)\n",
+                    lv_label_get_text(obj), (long)left, (long)right,
+                    (long)limits->x1, (long)limits->x2);
+            abort();
+        }
+    }
+    for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++)
+        check_labels_within(lv_obj_get_child(obj, i), limits);
 }
 
 static void check_memory(void)
@@ -605,13 +662,34 @@ int main(void)
         // longer carries a per-card preference row.
         assert(!find_label(lv_screen_active(),"HOME CARD:F1"));
         assert(!find_label(lv_screen_active(),"HOME CARD:LFC"));
-        const char *sync_rows[] = {"CAL SYNC NEVER", "RESULTS NEVER", "DRIVERS CACHE DATE?", "TEAMS CACHE DATE?"};
-        for (unsigned row = 0; row < 4; row++) {
+        const char *sync_rows[] = {"CAL SYNC NEVER", "RESULTS NEVER", "DRIVERS CACHE DATE?", "TEAMS CACHE DATE?", "PL NEVER"};
+        for (unsigned row = 0; row < 5; row++) {
             lv_obj_t *label = find_label(lv_screen_active(), sync_rows[row]);
-            assert(label && lv_obj_get_y(label) == (int)row * 14);
+            // Five status lines share the panel with the action rows below them,
+            // so they run on a 13-pixel pitch instead of the original 14.
+            assert(label && lv_obj_get_y(label) == (int)row * 13);
         }
         lv_obj_t *back = lv_obj_get_parent(find_label(lv_screen_active(), "BACK"));
-        assert(lv_obj_get_y(back) + lv_obj_get_height(back) <= 191);
+        // The panel spends 7 px on its border and padding at every edge, so a
+        // row that ends within 191 - 14 px is clear of the bottom edge: the sync
+        // block ends at y=66 and the trailing BACK card runs 154..173.
+        assert(lv_obj_get_y(back) + lv_obj_get_height(back) <= 191 - 14);
+        // Every row draws one label inside its card. The widest of them,
+        // `KEY SOUND: OFF`, is wider than the card in the 16-pixel face and used
+        // to lose its first K and last F to the clip edge; the text of a row has
+        // to fit the label it is drawn in.
+        lv_obj_t *menu_panel = lv_obj_get_parent(back);
+        for (uint32_t row = 0; row < lv_obj_get_child_count(menu_panel); row++) {
+            lv_obj_t *card = lv_obj_get_child(menu_panel, row);
+            if (lv_obj_get_child_count(card) != 1) continue;
+            lv_obj_t *label = lv_obj_get_child(card, 0);
+            if (!lv_obj_check_type(label, &lv_label_class)) continue;
+            lv_point_t size;
+            lv_text_get_size(&size, lv_label_get_text(label),
+                             lv_obj_get_style_text_font(label, 0), 0, 0,
+                             LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+            assert(size.x <= lv_obj_get_width(label));
+        }
         // Park the cursor on the trailing row, then step onto the first item, so
         // every row below is reached in a fixed number of presses.
         for (unsigned i = 0; i < PDKPASS_NETWORK_ITEMS; ++i) {
@@ -660,6 +738,40 @@ int main(void)
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         counter = find_label_containing(lv_screen_active(), " / ");
         assert(counter && strcmp(landing, lv_label_get_text(counter)) == 0);
+        // One full lap, checking every card: the dashboard carries the longest
+        // names in the product, and each one has to fit its panel and its rows.
+        // `Brighton & Hove Albion` is the club that needs a second line.
+        lv_obj_t *deck_panel = lv_obj_get_parent(counter);
+        assert(deck_panel);
+        lv_area_t deck_limits;
+        lv_obj_get_content_coords(deck_panel, &deck_limits);
+        bool brighton_seen = false, fulham_seen = false;
+        for (unsigned i = 0; i < 61; ++i) {
+            check_body_text(lv_screen_active());
+            check_labels_within(deck_panel, &deck_limits);
+            lv_obj_t *opponent =
+                find_label(lv_screen_active(), "Brighton & Hove Albion");
+            if (opponent) {
+                // The longest club keeps the 16-pixel face and breaks onto a
+                // second line instead of shrinking into the narrower body face,
+                // so it stays in the same size class as the rows above it.
+                assert(lv_label_get_long_mode(opponent) == LV_LABEL_LONG_WRAP);
+                const lv_font_t *font = lv_obj_get_style_text_font(opponent, 0);
+                assert(font->line_height == 17);
+                // Two lines is the whole budget: the kick-off card sits below.
+                assert(lv_obj_get_height(opponent) <= 2 * font->line_height + 2);
+                brighton_seen = true;
+            }
+            opponent = find_label(lv_screen_active(), "Fulham");
+            if (opponent) {
+                // A short club keeps the 16-pixel face on a single line.
+                assert(lv_obj_get_style_text_font(opponent, 0)->line_height == 17);
+                assert(lv_label_get_long_mode(opponent) == LV_LABEL_LONG_CLIP);
+                fulham_seen = true;
+            }
+            simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        }
+        assert(brighton_seen && fulham_seen);
         // Both card kinds are reachable, and each opens its own detail page: a
         // Liverpool card opens the fixture, a Formula 1 card the round detail.
         for (unsigned i = 0;
@@ -668,9 +780,21 @@ int main(void)
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
         // A Liverpool card counts the Premier League season, not the deck.
         assert(find_label_containing(lv_screen_active(), " / 38"));
+        // With no radio the fixture page keeps the plain back hint and never
+        // advertises a refresh it could not perform.
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "UP/DN:MATCH HOLD:BACK"));
-        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK); // -> dashboard
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG); // -> dashboard
+        // Force the radio up: the fixture page only advertises the manual ESPN
+        // refresh while the network is usable.
+        simulator_set_network(PDKPASS_NETWORK_ONLINE);
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
+        // Online, the fixture page offers a manual ESPN refresh on OK, and the
+        // long press still leaves for the dashboard, so the hint carries both.
+        assert(find_label(lv_screen_active(), "UP/DN OK:REFRESH HOLD:BACK"));
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK); // -> refresh request
+        assert(find_label(lv_screen_active(), "UP/DN OK:REFRESH HOLD:BACK"));
+        simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG); // -> dashboard
         check_memory();
         for (unsigned i = 0;
              i < 61 && !find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"); ++i)

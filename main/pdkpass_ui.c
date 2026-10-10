@@ -5,6 +5,7 @@
 #include "lfc_data.h"
 #include "lfc_schedule.h"
 #include "lfc_store.h"
+#include "lfc_sync.h"
 #include "lfc_table.h"
 #include "lfc_theme.h"
 #include "pdkpass_data.h"
@@ -706,7 +707,7 @@ static void render_season_complete(void)
     memset(&s_team_standings, 0, sizeof(s_team_standings));
     pdkpass_season_team_snapshot(&s_team_standings);
     char title[20];
-    title_for_season(title, sizeof(title), "PDKPASS");
+    title_for_season(title, sizeof(title), "FORMULA 1");
     set_title(title);
     set_status("FINAL FLAG", UI_RED);
     content_reset(UI_SKY, UI_SKY_DARK);
@@ -905,7 +906,7 @@ static void render_home_race(size_t race_index, size_t position, size_t total)
     memset(&s_team_standings, 0, sizeof(s_team_standings));
     pdkpass_season_team_snapshot(&s_team_standings);
     char title[20];
-    title_for_season(title, sizeof(title), "PDKPASS");
+    title_for_season(title, sizeof(title), "FORMULA 1");
     set_title(title);
     update_home_status();
     ui_pixel_screen_set_theme(s_screen, theme.top, theme.bottom);
@@ -1792,7 +1793,7 @@ void pdkpass_ui_enter(bool battery_available)
     memset(&s_team_standings, 0, sizeof(s_team_standings));
     pdkpass_season_team_snapshot(&s_team_standings);
     char title[20];
-    title_for_season(title, sizeof(title), "PDKPASS");
+    title_for_season(title, sizeof(title), "FORMULA 1");
     s_screen = ui_pixel_screen_create(title);
     s_status = ui_pixel_ticket_create(s_screen, STATUS_X, STATUS_Y,
                                       STATUS_W, STATUS_H, UI_SKY, true);

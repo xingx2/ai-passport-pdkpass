@@ -177,7 +177,7 @@ int main(void) {
 typedef int nvs_handle_t;
 static int s_guard;
 static int64_t s_last_success[PDKPASS_SYNC_STATUS_COUNT],disk[PDKPASS_SYNC_STATUS_COUNT],staged[PDKPASS_SYNC_STATUS_COUNT];
-static const char *const s_status_keys[]={"calendar","results","drivers","teams"};
+static const char *const s_status_keys[]={"calendar","results","drivers","teams","premier"};
 static unsigned writes,commits,callbacks;
 static bool fail_set,fail_commit;
 static void changed(void) {callbacks++;}
@@ -208,19 +208,19 @@ int main(void) {
   pdkpass_sync_mark_success((pdkpass_sync_status_t)i,next);
   pdkpass_sync_mark_success((pdkpass_sync_status_t)i,next+60);
  }
- assert(writes==4&&commits==4&&callbacks==4);
+ assert(writes==5&&commits==5&&callbacks==5);
  fail_set=true;pdkpass_sync_mark_success(PDKPASS_SYNC_STATUS_DRIVERS,next+86400);
- assert(pdkpass_sync_last_success(PDKPASS_SYNC_STATUS_DRIVERS)==next&&callbacks==4);
+ assert(pdkpass_sync_last_success(PDKPASS_SYNC_STATUS_DRIVERS)==next&&callbacks==5);
  fail_set=false;fail_commit=true;pdkpass_sync_mark_success(PDKPASS_SYNC_STATUS_TEAMS,next+86400);
- assert(pdkpass_sync_last_success(PDKPASS_SYNC_STATUS_TEAMS)==next&&callbacks==4);
+ assert(pdkpass_sync_last_success(PDKPASS_SYNC_STATUS_TEAMS)==next&&callbacks==5);
  fail_commit=false;pdkpass_sync_mark_success(PDKPASS_SYNC_STATUS_TEAMS,next+86400);
- assert(callbacks==5&&disk[3]==next+86400&&disk[0]==next);
+ assert(callbacks==6&&disk[3]==next+86400&&disk[0]==next);
  memset(s_last_success,0,sizeof(s_last_success));pdkpass_sync_status_init(changed);
  assert(pdkpass_sync_last_success(PDKPASS_SYNC_STATUS_TEAMS)==next+86400);
- assert(pdkpass_sync_last_success(PDKPASS_SYNC_STATUS_DRIVERS)==next);
+ assert(pdkpass_sync_last_success(PDKPASS_SYNC_STATUS_PREMIER)==next);
  unsigned before=writes;pdkpass_sync_mark_success(PDKPASS_SYNC_STATUS_COUNT,next);
  pdkpass_sync_mark_success(PDKPASS_SYNC_STATUS_RESULTS,0);assert(writes==before);
- puts("Sync dates: separate calendar/results/drivers/teams, legacy keys, daily dedup and failed commits: PASS");
+ puts("Sync dates: separate calendar/results/drivers/teams/premier, legacy keys, daily dedup and failed commits: PASS");
 }
 '''
         compile_run(code)
@@ -3718,6 +3718,12 @@ int main(void) {
  assert(strcmp(line,"DRIVERS 26.01.01")==0);
  format_sync_line(PDKPASS_SYNC_STATUS_TEAMS,2026,0,true,line,sizeof(line));
  assert(strcmp(line,"TEAMS CACHE DATE?")==0);
+ // The Premier League season spans two calendar years, so the row is rendered
+ // without a season year and never reports a mismatch.
+ format_sync_line(PDKPASS_SYNC_STATUS_PREMIER,0,0,false,line,sizeof(line));
+ assert(strcmp(line,"PL NEVER")==0);
+ format_sync_line(PDKPASS_SYNC_STATUS_PREMIER,0,1767225600LL,false,line,sizeof(line));
+ assert(strcmp(line,"PL 26.01.01")==0);
  puts("sync menu distinguishes old cache, no cache and dated sync: PASS");
 }
 '''

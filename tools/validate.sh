@@ -47,6 +47,10 @@ run_static_checks() {
         -o "${test_dir}/test_lfc_schedule"
     "${test_dir}/test_lfc_schedule"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_lfc_theme.c main/lfc_theme.c main/lfc_data.c \
+        -o "${test_dir}/test_lfc_theme"
+    "${test_dir}/test_lfc_theme"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/test_lfc_reminder.c main/lfc_reminder_core.c main/lfc_data.c \
         main/lfc_table.c -o "${test_dir}/test_lfc_reminder"
     "${test_dir}/test_lfc_reminder"

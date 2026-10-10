@@ -7,6 +7,28 @@
 // card, so there is no season list in between to keep in step.
 static size_t s_lfc_selected;
 
+// The opponent line of the dashboard card. Club names run from "Fulham" to
+// "Brighton & Hove Albion" and the card leaves 204 px for the name, which holds
+// twelve characters of the 16-pixel face. Instead of shrinking a longer name
+// into the narrower body face -- which reads as a different size class next to
+// the double-height `PL Rn` and `HOME`/`AWAY` rows -- the name keeps the
+// 16-pixel face and breaks onto a second line between words. Two lines hold
+// every Premier League club and still clear the kick-off card below. Nothing is
+// squeezed with a transform: a scaled label costs its own render layer, several
+// kilobytes on the 64 KB pool this board draws from.
+static void render_fixture_opponent(const char *name, int y, uint32_t ink)
+{
+    const int available = INNER_W - 6;
+    lv_point_t size;
+    lv_text_get_size(&size, name, &lv_font_unscii_16, 0, 0, LV_COORD_MAX,
+                     LV_TEXT_FLAG_NONE);
+    lv_obj_t *label = make_center_label(s_content, name, 0, y, INNER_W,
+                                        &lv_font_unscii_16, ink);
+    if (size.x > available) {
+        lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    }
+}
+
 static const char *lfc_month(unsigned month)
 {
     static const char *months[] = {"JAN", "FEB", "MAR", "APR", "MAY", "JUN",
@@ -61,8 +83,7 @@ static void render_home_match(size_t index, size_t position, size_t total)
     make_zoom_label(s_content, round, 0, 3, INNER_W, top_ink);
     make_fit_zoom_label(s_content, fixture->home ? "HOME" : "AWAY", 0, 35,
                         INNER_W, top_ink);
-    make_center_label(s_content, fixture->opponent, 0, 73, INNER_W,
-                      &lv_font_unscii_16, top_ink);
+    render_fixture_opponent(fixture->opponent, 73, top_ink);
 
     lv_obj_t *card = make_card(s_content, 8, 113, 194, 27, theme.bottom, 3);
     char line[20];
@@ -132,7 +153,12 @@ static void render_lfc_detail(void)
         make_center_label(state, "BEIJING TIME", 0, 25, 202, &lv_font_unscii_8,
                           UI_INK);
     }
-    set_hint("UP/DN:MATCH HOLD:BACK");
+    // Online, OK asks for a fresh result and the long press still leaves the
+    // page; offline the request would only queue, so the hint drops it and keeps
+    // the back key. The footer squeezes a long hint in width only, and this one
+    // condenses to the same narrow class as the medium labels.
+    set_hint(s_network_state == PDKPASS_NETWORK_ONLINE
+                 ? "UP/DN OK:REFRESH HOLD:BACK" : "UP/DN:MATCH HOLD:BACK");
 }
 
 // Button handling for the fixture detail page. The dashboard card opens it and
@@ -151,7 +177,13 @@ static bool lfc_handle_input(pdkpass_input_t input)
             (s_lfc_selected + lfc_table_count() - 1U) % lfc_table_count();
     } else if (input == PDKPASS_INPUT_DOWN) {
         s_lfc_selected = (s_lfc_selected + 1U) % lfc_table_count();
-    } else if (input == PDKPASS_INPUT_OK || input == PDKPASS_INPUT_BACK) {
+    } else if (input == PDKPASS_INPUT_OK) {
+        // Ask the fixture service for a fresh result. It re-reads the next
+        // unplayed kick-off and any finished match, then repaints this page
+        // through pdkpass_ui_lfc_update(). Offline the request waits for
+        // connectivity, so the card is simply left as it is.
+        lfc_sync_request();
+    } else if (input == PDKPASS_INPUT_BACK) {
         // Keep the card the user was on, exactly like the round detail.
         s_state.page = PDKPASS_PAGE_HOME;
     } else {

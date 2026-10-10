@@ -61,7 +61,7 @@ supported weekend session.
 
 ## No app required
 
-No phone app is required. Hold OK on the home screen to open `NETWORK`, select
+No phone app is required. Hold OK on the home screen to open `SETTINGS`, select
 `WI-FI SETUP`, and confirm if already connected. The device scans nearby
 networks, then opens a temporary hotspot and displays its QR code. Press OK
 to show the backup screen with the hotspot name, password and `192.168.9.1`.
@@ -97,13 +97,16 @@ flasher overwrites NVS, so Wi-Fi must be configured again after that installatio
 
 The top status changes through `SETUP`, `WIFI...`, `TIME...`, and `WIFI OK`.
 `WIFI OK` indicates connectivity, not that calendar or results data is current.
-The network menu shows separate Beijing dates for successful `CAL SYNC`,
-`RESULTS`, `DRIVERS` and `TEAMS` checks in the active season. Manual and automatic
+The `SETTINGS` screen shows separate Beijing dates for successful `CAL SYNC`,
+`RESULTS`, `DRIVERS` and `TEAMS` checks in the active season, and a `PL` row for
+the Liverpool fixture refresh. Manual and automatic
 checks update the matching date after complete responses are validated and any
 changed data is saved. An unchanged response also counts as a successful check;
 partial points updates record only the table that succeeded. Points checks do
 not update the calendar date. Existing calendar/results dates are retained,
-and each data set writes its date at most once per Beijing day. A date from another season is not shown
+and each data set writes its date at most once per Beijing day. The `PL` row is
+stamped by any Liverpool pass that reached ESPN, even when no fixture changed, and
+carries no season year because a Premier League season spans two calendar years. A date from another season is not shown
 as current: the menu says `CAL 2027 NO SYNC` or `RESULT 2027 NO SYNC` until that
 season is updated. An active-season cache without a recorded date says
 `CACHE DATE?`; `NEVER` means neither cached data nor a recorded update. The
@@ -123,7 +126,7 @@ remain asleep. Setup or explicit cancellation stops the pending retry.
 
 ## Session reminders
 
-Reminders default to on. In `NETWORK`, select `ALERTS: ON/OFF` and press OK to
+Reminders default to on. In `SETTINGS`, select `ALERTS: ON/OFF` and press OK to
 change the saved setting. Every scheduled FP1, FP2, FP3, sprint qualifying,
 sprint, qualifying and race session rings once, ten minutes before its start.
 Missing or cancelled sessions do not ring. Schedule updates change the deadline.
@@ -155,7 +158,7 @@ consumption and simultaneous TLS/audio headroom still require testing.
 
 ## Button sounds
 
-Button cues default to off. In `NETWORK`, select `KEY SOUND: ON/OFF` and press OK
+Button cues default to off. In `SETTINGS`, select `KEY SOUND: ON/OFF` and press OK
 to change the saved setting; it persists across upgrades and restarts. When on,
 the up, down, OK and back keys play a short cue on press; when off, buttons stay
 silent. This switch is independent of `ALERTS`: turning reminders off does not
@@ -175,8 +178,9 @@ On boot the carousel parks on the event that is next, so the device opens on
 whatever happens first rather than on a fixed card. OK opens the detail page for
 the card on screen: on a Formula 1 round that is the session list and results, on
 a Liverpool match the fixture detail — home or away, the opponent, the venue, the
-Beijing kick-off and the final score once the match is complete. Holding OK goes
-back. The background takes the club's own colour: Liverpool red at Anfield, the
+Beijing kick-off and the final score once the match is complete. On that page OK
+requests a refresh of the fixture table immediately, so a result that has just
+landed does not have to wait for the background pass; holding OK goes back. The background takes the club's own colour: Liverpool red at Anfield, the
 opponent's primary colour away, with a readable text colour chosen for each.
 
 The fixture snapshot is compiled into the firmware, so the list works with no
