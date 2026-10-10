@@ -22,5 +22,26 @@ void lfc_sync_set_network(bool online, bool time_valid);
 // Ask for a refresh as soon as the clock allows. Worker-safe.
 void lfc_sync_request(void);
 
+// The fixture detail page refreshes with OK, so it has to be able to say what
+// happened: a key that quietly does nothing reads as a broken key. Every
+// outcome advances the generation, which lets the footer notice a repeat of the
+// same word and keep showing it for a moment.
+typedef enum {
+    LFC_REFRESH_IDLE = 0,
+    LFC_REFRESH_UNAVAILABLE, // no radio, or no synchronized clock yet
+    LFC_REFRESH_RUNNING,
+    LFC_REFRESH_UPDATED,
+    LFC_REFRESH_UNCHANGED,   // ESPN answered, but nothing had changed
+    LFC_REFRESH_FAILED,      // the pass could not complete
+} lfc_refresh_state_t;
+
+typedef struct {
+    unsigned generation;
+    lfc_refresh_state_t state;
+} lfc_refresh_status_t;
+
+// False until the first manual request of this boot.
+bool lfc_sync_refresh_status(lfc_refresh_status_t *status);
+
 // Unix time of the last successful refresh, or 0 when nothing has landed yet.
 int64_t lfc_sync_last_success(void);

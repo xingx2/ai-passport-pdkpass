@@ -126,6 +126,9 @@ static const char *detail_session_short_label(unsigned session) {assert(session=
 bool pdkpass_results_manual_status(size_t *race,pdkpass_manual_status_t *out) {reads++;*race=1;*out=result;return true;}
 static pdkpass_manual_status_t points[PDKPASS_POINTS_TARGET_COUNT];
 bool pdkpass_season_manual_status(pdkpass_points_target_t target,pdkpass_manual_status_t *out) {reads++;*out=points[target];return true;}
+// The Liverpool fixture detail reports its own refresh from the same tick.
+static unsigned lfc_hints;
+static void lfc_manual_hint(void) {lfc_hints++;}
 static void render(void) {renders++;}
 '''
         for sig in ['static bool sync_notice_active(', 'static void update_manual_hint(',
@@ -135,12 +138,15 @@ static void render(void) {renders++;}
 int main(void) {
  lv_timer_t timer=1;now=1;manual_sync_tick(&timer);
  assert(!strcmp(hint,"FP1 SYNCING...")&&s_results_sync_generation==1);
+ assert(lfc_hints==1);
  s_idle_stage=2;unsigned before=reads;result.state=PDKPASS_MANUAL_UPDATED;result.generation++;
  now=90000;manual_sync_tick(&timer);assert(reads==before&&paused==1&&s_results_sync_generation==1);
  now+=60000;manual_sync_tick(&timer);assert(reads==before&&s_results_notice_until==0);
+ assert(lfc_hints==1); // a paused tick returns before reaching either footer
  s_idle_stage=0;manual_sync_tick(NULL);
  assert(s_results_sync_generation==2&&s_results_notice_until==now+3000);
  assert(!strcmp(hint,"FP1 UPDATED")&&renders==2);
+ assert(lfc_hints==2);
  now+=3001;manual_sync_tick(&timer);assert(!strcmp(hint,"UP/DN OK:SYNC HOLD:BACK"));
  s_sync_reject_page=s_state.page;s_sync_cooldown_until_us=esp_timer_get_time()+57100000;
  update_manual_hint();assert(!strcmp(hint,"WAIT 58s TO SYNC"));

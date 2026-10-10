@@ -54,8 +54,12 @@ static void check_body_text(lv_obj_t *obj)
         const lv_font_t *font = lv_obj_get_style_text_font(obj, 0);
         const char *text = lv_label_get_text(obj);
         if (font->line_height == 14) {
+            // A long name is broken onto a measured second line by the renderer,
+            // so a newline is a layout instruction rather than something to look
+            // up in the face.
             uint32_t offset = 0, letter;
             while ((letter = lv_text_encoded_next(text, &offset)) != 0) {
+                if (letter == '\n' || letter == '\r') continue;
                 lv_font_glyph_dsc_t glyph = {0};
                 assert(lv_font_get_glyph_dsc(font, &glyph, letter, 0));
                 assert(!glyph.is_placeholder);
@@ -750,12 +754,14 @@ int main(void)
             check_body_text(lv_screen_active());
             check_labels_within(deck_panel, &deck_limits);
             lv_obj_t *opponent =
-                find_label(lv_screen_active(), "Brighton & Hove Albion");
+                find_label(lv_screen_active(), "Brighton &\nHove Albion");
             if (opponent) {
                 // The longest club keeps the 16-pixel face and breaks onto a
-                // second line instead of shrinking into the narrower body face,
-                // so it stays in the same size class as the rows above it.
-                assert(lv_label_get_long_mode(opponent) == LV_LABEL_LONG_WRAP);
+                // second line between words instead of shrinking into the
+                // narrower body face, so it stays in the same size class as the
+                // rows above it. The break is measured by the renderer, not left
+                // to LVGL's wrapper, which never settles on this layout.
+                assert(lv_label_get_long_mode(opponent) == LV_LABEL_LONG_CLIP);
                 const lv_font_t *font = lv_obj_get_style_text_font(opponent, 0);
                 assert(font->line_height == 17);
                 // Two lines is the whole budget: the kick-off card sits below.
@@ -780,20 +786,55 @@ int main(void)
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
         // A Liverpool card counts the Premier League season, not the deck.
         assert(find_label_containing(lv_screen_active(), " / 38"));
-        // With no radio the fixture page keeps the plain back hint and never
-        // advertises a refresh it could not perform.
+        // The fixture page advertises the manual ESPN refresh from the start,
+        // exactly like the Formula 1 detail pages: hiding it while the clock was
+        // still settling made the key look absent rather than unavailable, and
+        // the press reports its own outcome in the footer instead.
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
-        assert(find_label(lv_screen_active(), "UP/DN:MATCH HOLD:BACK"));
-        simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG); // -> dashboard
-        // Force the radio up: the fixture page only advertises the manual ESPN
-        // refresh while the network is usable.
+        assert(find_label(lv_screen_active(), "UP/DN OK:REFRESH HOLD:BACK"));
         simulator_set_network(PDKPASS_NETWORK_ONLINE);
-        simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
-        // Online, the fixture page offers a manual ESPN refresh on OK, and the
-        // long press still leaves for the dashboard, so the hint carries both.
         assert(find_label(lv_screen_active(), "UP/DN OK:REFRESH HOLD:BACK"));
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK); // -> refresh request
         assert(find_label(lv_screen_active(), "UP/DN OK:REFRESH HOLD:BACK"));
+        // Every club keeps one face here too. Fitting the name with a transform
+        // made `ARSENAL` double size and `CRYSTAL PALACE` small, so the two read
+        // as different ranks of information on the same page. Step through the
+        // whole season and check the named clubs as they come up.
+        bool arsenal_seen = false, palace_seen = false, brighton_seen_here = false;
+        bool coventry_seen = false;
+        static const char *const clubs[] = {"Arsenal", "Crystal", "Brighton"};
+        for (unsigned i = 0; i < 38; i++) {
+            for (unsigned c = 0; c < 3; c++) {
+                lv_obj_t *club =
+                    find_label_containing(lv_screen_active(), clubs[c]);
+                if (!club) continue;
+                // One face for every club, on one line or two.
+                assert(lv_obj_get_style_text_font(club, 0)->line_height == 17);
+                if (c == 0) arsenal_seen = true;
+                if (c == 1) palace_seen = true;
+                if (c == 2) brighton_seen_here = true;
+            }
+            // `Coventry Building Society Arena` is the longest ground in the
+            // season. It used to be squeezed to fit the row with a transform,
+            // which asked the refresh for the whole label as a single 39 KB
+            // ARGB8888 layer; that allocation is not always there to be had, and
+            // the refresh retries it for ever rather than settling. It breaks
+            // onto a second line at the body face now and asks for no layer.
+            lv_obj_t *ground =
+                find_label_containing(lv_screen_active(), "Society Arena");
+            if (ground) {
+                assert(lv_obj_get_style_text_font(ground, 0)->line_height == 14);
+                assert(lv_label_get_long_mode(ground) == LV_LABEL_LONG_CLIP);
+                assert(strstr(lv_label_get_text(ground), "\n"));
+                coventry_seen = true;
+                save_detail_preview("pl-detail-coventry.png");
+            }
+            if (find_label_containing(lv_screen_active(), "Arsenal"))
+                save_detail_preview("pl-detail-arsenal.png");
+            simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
+        }
+        assert(arsenal_seen && palace_seen && brighton_seen_here);
+        assert(coventry_seen);
         simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG); // -> dashboard
         check_memory();
         for (unsigned i = 0;

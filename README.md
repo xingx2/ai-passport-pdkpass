@@ -180,7 +180,11 @@ the card on screen: on a Formula 1 round that is the session list and results, o
 a Liverpool match the fixture detail — home or away, the opponent, the venue, the
 Beijing kick-off and the final score once the match is complete. On that page OK
 requests a refresh of the fixture table immediately, so a result that has just
-landed does not have to wait for the background pass; holding OK goes back. The background takes the club's own colour: Liverpool red at Anfield, the
+landed does not have to wait for the background pass; holding OK goes back. The
+key is advertised whatever the radio is doing, and the footer reports what the
+request did — `NEED WIFI + CLOCK`, `REFRESHING...`, `FIXTURES UPDATED`,
+`NO NEW DATA` or `REFRESH FAILED`. The background takes the club's own colour:
+Liverpool red at Anfield, the
 opponent's primary colour away, with a readable text colour chosen for each.
 
 The fixture snapshot is compiled into the firmware, so the list works with no

@@ -30,7 +30,6 @@ static const char *TAG = "pdkpass_lfc";
 #define LFC_SYNC_MAX_FIXTURES 4U
 #define LFC_SYNC_HTTP_DEADLINE_US (60LL * 1000000LL)
 #define LFC_SYNC_IDLE_SECONDS (6LL * 60LL * 60LL)
-#define LFC_SYNC_PRESSED_SECONDS 60LL
 #define LFC_SYNC_WAKE_MS 60000U
 #define LFC_SYNC_TASK_STACK 4096U
 #define LFC_SYNC_URL_LEN 200U
@@ -50,6 +49,10 @@ static int64_t s_last_attempt;
 // reports the last day the fixture table came back from ESPN, so a pass that
 // only found nothing new still counts once the radio answered.
 static bool s_pass_contacted;
+// True while the pass in flight is the one the user asked for, so its outcome is
+// reported to the fixture detail footer.
+static bool s_manual_pass;
+static lfc_refresh_status_t s_refresh;
 
 // Only this worker touches the candidate copy, and it is three kilobytes, so it
 // lives in .bss rather than on the worker's stack.
@@ -158,14 +161,31 @@ static bool refresh_next_kickoff(size_t count, int64_t now)
     return false;
 }
 
+// Records how a user-requested pass ended. Automatic passes stay silent here:
+// the footer only speaks up when the user asked for something directly.
+static void finish_manual_pass(lfc_refresh_state_t state)
+{
+    if (!s_manual_pass) return;
+    s_manual_pass = false;
+    s_refresh.state = state;
+    s_refresh.generation++;
+}
+
 static void sync_once(int64_t now)
 {
     size_t count = 0;
-    if (!lfc_table_copy(s_candidate, LFC_MAX_FIXTURES, &count)) return;
+    if (!lfc_table_copy(s_candidate, LFC_MAX_FIXTURES, &count)) {
+        finish_manual_pass(LFC_REFRESH_FAILED);
+        return;
+    }
     s_last_attempt = now;
     s_pass_contacted = false;
-    if (!pdkpass_http_begin_until(esp_timer_get_time() + LFC_SYNC_HTTP_DEADLINE_US))
+    if (!pdkpass_http_begin_until(esp_timer_get_time() + LFC_SYNC_HTTP_DEADLINE_US)) {
+        // Another service owns the radio; the pressed detail page must not hang
+        // on "refreshing" waiting for a pass that never started.
+        finish_manual_pass(LFC_REFRESH_FAILED);
         return;
+    }
 
     bool changed = false;
     unsigned checked = 0;
@@ -194,7 +214,13 @@ static void sync_once(int64_t now)
     // last successful contact, not the last time a fixture actually changed.
     if (s_pass_contacted)
         pdkpass_sync_mark_success(PDKPASS_SYNC_STATUS_PREMIER, now);
-    if (!changed) return;
+    if (!changed) {
+        // "No new data" and "could not reach ESPN" are different answers, and
+        // the footer should not conflate them.
+        finish_manual_pass(s_pass_contacted ? LFC_REFRESH_UNCHANGED
+                                            : LFC_REFRESH_FAILED);
+        return;
+    }
 
     // Flash first, then publish: a redraw must never wait on NVS, and the next
     // boot reads the same rows even if the publish is skipped.
@@ -209,6 +235,7 @@ static void sync_once(int64_t now)
     }
     s_last_success = now;
     ESP_LOGI(TAG, "Fixture refresh complete (%u match(es) checked)", checked);
+    finish_manual_pass(LFC_REFRESH_UPDATED);
 }
 
 static void sync_task(void *argument)
@@ -220,9 +247,16 @@ static void sync_task(void *argument)
         if (!s_online || !s_time_valid || now <= 0) continue;
         bool pressed = s_pressed;
         s_pressed = false;
-        int64_t cooldown = pressed ? LFC_SYNC_PRESSED_SECONDS : LFC_SYNC_IDLE_SECONDS;
-        if (s_last_attempt && now < s_last_attempt + cooldown) continue;
+        // A press is the user asking directly, so it runs regardless of the
+        // cooldown; only automatic passes wait it out.
+        if (!pressed && s_last_attempt &&
+            now < s_last_attempt + LFC_SYNC_IDLE_SECONDS)
+            continue;
+        s_manual_pass = pressed;
         sync_once(now);
+        // A pass always resolves its own outcome; this only covers a future
+        // early return that forgets to, so the footer cannot hang.
+        s_manual_pass = false;
     }
 }
 
@@ -249,8 +283,26 @@ void lfc_sync_set_network(bool online, bool time_valid)
 
 void lfc_sync_request(void)
 {
+    // Report why a request cannot run instead of dropping it: the caller shows
+    // this in the footer, and a key that appears to do nothing reads as broken.
+    if (!s_online || !s_time_valid || time(NULL) <= 0) {
+        s_refresh.state = LFC_REFRESH_UNAVAILABLE;
+        s_refresh.generation++;
+        return;
+    }
+    s_refresh.state = LFC_REFRESH_RUNNING;
+    s_refresh.generation++;
     s_pressed = true;
     if (s_task) xTaskNotifyGive(s_task);
+}
+
+bool lfc_sync_refresh_status(lfc_refresh_status_t *status)
+{
+    if (!status) return false;
+    if (s_refresh.state == LFC_REFRESH_IDLE) return false;
+    status->generation = s_refresh.generation;
+    status->state = s_refresh.state;
+    return true;
 }
 
 int64_t lfc_sync_last_success(void)

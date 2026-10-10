@@ -12,6 +12,7 @@
 #include "pdkpass_reminder.h"
 #include "pdkpass_sound.h"
 #include "lfc_store.h"
+#include "lfc_sync.h"
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -622,8 +623,15 @@ int64_t pdkpass_sync_last_success(pdkpass_sync_status_t service)
 }
 
 // The manual Premier League refresh is a firmware service. The preview only has
-// to satisfy the link; the detail page's OK key calls it.
+// to satisfy the link; the detail page's OK key calls it. No request is ever
+// made here, so the footer never reports one.
 void lfc_sync_request(void) {}
+
+bool lfc_sync_refresh_status(lfc_refresh_status_t *status)
+{
+    (void)status;
+    return false;
+}
 
 // UI preview only: radio/timers are exercised by firmware service tests.
 esp_err_t pdkpass_network_request(pdkpass_network_command_t command)

@@ -663,6 +663,10 @@ static void update_manual_hint(void)
     set_hint("UP/DN OK:SYNC HOLD:HOME");
 }
 
+// Defined in lfc_ui.inc, which is included below; the manual-sync tick drives
+// both the Formula 1 and the Liverpool footers.
+static void lfc_manual_hint(void);
+
 static void manual_sync_tick(lv_timer_t *timer)
 {
     if (s_idle_stage == 2) {
@@ -691,6 +695,7 @@ static void manual_sync_tick(lv_timer_t *timer)
     }
     if (redraw_results) render();
     update_manual_hint();
+    lfc_manual_hint();
 }
 
 static void title_for_season(char *output, size_t capacity,

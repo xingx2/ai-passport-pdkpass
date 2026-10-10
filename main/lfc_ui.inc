@@ -7,26 +7,80 @@
 // card, so there is no season list in between to keep in step.
 static size_t s_lfc_selected;
 
-// The opponent line of the dashboard card. Club names run from "Fulham" to
-// "Brighton & Hove Albion" and the card leaves 204 px for the name, which holds
-// twelve characters of the 16-pixel face. Instead of shrinking a longer name
-// into the narrower body face -- which reads as a different size class next to
-// the double-height `PL Rn` and `HOME`/`AWAY` rows -- the name keeps the
-// 16-pixel face and breaks onto a second line between words. Two lines hold
-// every Premier League club and still clear the kick-off card below. Nothing is
-// squeezed with a transform: a scaled label costs its own render layer, several
-// kilobytes on the 64 KB pool this board draws from.
+// Long values keep their face and break between words rather than being squeezed
+// with a transform. A scaled label is drawn through a render layer of its own,
+// and the window between the label and the refresh is the trap: the detail page
+// asked for `Coventry Building Society Arena` as one 328 x 30 ARGB8888 buffer,
+// 39 KB in a single piece, which is more than a 64 KB pool can be relied on to
+// hand over once the page around it is up. The refresh has no way back from that
+// -- it retries the same allocation for ever instead of settling -- so the label
+// simply stops asking, and breaks the text instead. A plain label needs no layer
+// at all.
+//
+// The break is measured here rather than delegated to LVGL's long-mode wrapper:
+// a wrapping label left the same refresh spinning, and the measured break lands
+// in the same place either way. Returns the number of lines produced.
+static int split_words(const char *text, const lv_font_t *font, int available,
+                       char *output, size_t capacity)
+{
+    char probe[LFC_VENUE_LEN];
+    lv_point_t size;
+    size_t used = 0;
+    size_t line_start = 0;
+    int lines = 1;
+    output[0] = '\0';
+
+    for (size_t i = 0; text[i] != '\0';) {
+        size_t word_end = i;
+        while (text[word_end] != '\0' && text[word_end] != ' ') word_end++;
+
+        // The candidate is the run from the start of this line through this
+        // word, so it is a prefix of the input: it cannot outgrow `probe` and
+        // the measurement never sees a truncated word.
+        size_t length = word_end - line_start;
+        if (length > sizeof(probe) - 1U) length = sizeof(probe) - 1U;
+        memcpy(probe, text + line_start, length);
+        probe[length] = '\0';
+        lv_text_get_size(&size, probe, font, 0, 0, LV_COORD_MAX,
+                         LV_TEXT_FLAG_NONE);
+
+        if (line_start != i && size.x > available) {
+            // Keep the word whole: close the line here, start the next one. The
+            // separator space before this word belongs to neither line, so the
+            // closed line stops short of it -- a trailing space would shift a
+            // centred name off balance for no visible reason.
+            size_t close = i;
+            while (close > line_start && text[close - 1U] == ' ') close--;
+            if (capacity - used < close - line_start + 2U) break;
+            memcpy(output + used, text + line_start, close - line_start);
+            used += close - line_start;
+            output[used++] = '\n';
+            lines++;
+            line_start = i;
+        }
+        i = text[word_end] == '\0' ? word_end : word_end + 1;
+    }
+
+    const size_t tail = strlen(text + line_start);
+    if (tail < capacity - used) {
+        memcpy(output + used, text + line_start, tail + 1U);
+    }
+    return lines;
+}
+
+// The opponent line, shared by the dashboard card and the fixture detail page.
+// Club names run from "Fulham" to "Brighton & Hove Albion", and the row leaves
+// 204 px for the name, which holds twelve characters of the 16-pixel face. Every
+// club keeps that face -- shrinking a longer name into the narrower body face
+// reads as a different size class next to the double-height `PL Rn` and
+// `HOME`/`AWAY` rows -- and a name that overruns one line breaks onto a second
+// one between words, still centred. Two lines hold every Premier League club and
+// clear whatever sits below.
 static void render_fixture_opponent(const char *name, int y, uint32_t ink)
 {
-    const int available = INNER_W - 6;
-    lv_point_t size;
-    lv_text_get_size(&size, name, &lv_font_unscii_16, 0, 0, LV_COORD_MAX,
-                     LV_TEXT_FLAG_NONE);
-    lv_obj_t *label = make_center_label(s_content, name, 0, y, INNER_W,
-                                        &lv_font_unscii_16, ink);
-    if (size.x > available) {
-        lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-    }
+    char text[LFC_OPPONENT_LEN + 4];
+    split_words(name, &lv_font_unscii_16, INNER_W - 6, text, sizeof(text));
+    make_center_label(s_content, text, 0, y, INNER_W, &lv_font_unscii_16, ink);
 }
 
 static const char *lfc_month(unsigned month)
@@ -128,8 +182,22 @@ static void render_lfc_detail(void)
 
     make_center_label(s_content, fixture->home ? "HOME" : "AWAY", 0, 6,
                       INNER_W, &lv_font_unscii_8, top_ink);
-    make_fit_zoom_label(s_content, fixture->opponent, 0, 24, INNER_W, top_ink);
-    make_fit_body_label(s_content, fixture->venue, 0, 78, INNER_W, top_ink);
+    // The same rule as the dashboard card: every club keeps the 16-pixel face
+    // and wraps onto a second line rather than shrinking. Fitting the name with
+    // a transform made short clubs double size and long ones small, so `Arsenal`
+    // and `Crystal Palace` read as two different ranks of information on the
+    // same page.
+    render_fixture_opponent(fixture->opponent, 24, top_ink);
+    // The venue follows the same rule. `Coventry Building Society Arena` is the
+    // longest ground in the season at 31 characters against the 21 the body face
+    // fits, and it is the one that used to be squeezed into a 39 KB layer; a
+    // second line costs 14 px instead, so the block moves up to keep the kick-off
+    // card clear and every other ground keeps the row it has always had.
+    char venue[LFC_VENUE_LEN + 4];
+    const int venue_lines = split_words(fixture->venue, &pdkpass_body_font,
+                                        INNER_W, venue, sizeof(venue));
+    make_label(s_content, venue, 0, venue_lines > 1 ? 64 : 78, INNER_W,
+               &pdkpass_body_font, top_ink);
 
     struct tm parts;
     lfc_beijing_parts(fixture->kickoff_utc, &parts);
@@ -153,12 +221,45 @@ static void render_lfc_detail(void)
         make_center_label(state, "BEIJING TIME", 0, 25, 202, &lv_font_unscii_8,
                           UI_INK);
     }
-    // Online, OK asks for a fresh result and the long press still leaves the
-    // page; offline the request would only queue, so the hint drops it and keeps
-    // the back key. The footer squeezes a long hint in width only, and this one
-    // condenses to the same narrow class as the medium labels.
-    set_hint(s_network_state == PDKPASS_NETWORK_ONLINE
-                 ? "UP/DN OK:REFRESH HOLD:BACK" : "UP/DN:MATCH HOLD:BACK");
+    // Always advertise the refresh, exactly like the Formula 1 detail pages
+    // advertise their sync: hiding it whenever the clock was still settling
+    // made the key look absent rather than unavailable, and the press reports
+    // its own outcome in the footer below.
+    set_hint("UP/DN OK:REFRESH HOLD:BACK");
+}
+
+// Footer feedback for the manual refresh, driven by the same 250 ms tick as the
+// Formula 1 manual sync. The word replaces the key hints for a moment after each
+// request so a press is never silent; the generation counter keeps a repeat of
+// the same word visible.
+static unsigned s_lfc_refresh_generation;
+static uint32_t s_lfc_refresh_notice_until;
+
+static void lfc_manual_hint(void)
+{
+    if (s_state.page != PDKPASS_PAGE_LFC_DETAIL) return;
+    lfc_refresh_status_t status;
+    if (!lfc_sync_refresh_status(&status)) return;
+    const char *word = NULL;
+    switch (status.state) {
+    case LFC_REFRESH_UNAVAILABLE: word = "NEED WIFI + CLOCK"; break;
+    case LFC_REFRESH_RUNNING: word = "REFRESHING..."; break;
+    case LFC_REFRESH_UPDATED: word = "FIXTURES UPDATED"; break;
+    case LFC_REFRESH_UNCHANGED: word = "NO NEW DATA"; break;
+    case LFC_REFRESH_FAILED: word = "REFRESH FAILED"; break;
+    default: return;
+    }
+    if (status.generation != s_lfc_refresh_generation) {
+        s_lfc_refresh_generation = status.generation;
+        s_lfc_refresh_notice_until = status.state == LFC_REFRESH_RUNNING
+            ? 0U : lv_tick_get() + 3000U;
+    }
+    if (status.state == LFC_REFRESH_RUNNING ||
+        sync_notice_active(s_lfc_refresh_notice_until)) {
+        set_hint(word);
+        return;
+    }
+    set_hint("UP/DN OK:REFRESH HOLD:BACK");
 }
 
 // Button handling for the fixture detail page. The dashboard card opens it and
