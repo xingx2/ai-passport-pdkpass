@@ -23,8 +23,16 @@ static const char *TAG = "pdkpass_lfc";
 // ESPN's public core API. Its "site" endpoints (scoreboard, summary) run to tens
 // of kilobytes and the firmware's HTTP client cannot decompress gzip, so the
 // refresh walks the per-resource documents instead: 250 B to 3 KB each, which
-// keeps every allocation inside the budget the rest of the firmware uses.
-#define LFC_CORE_API "https://sports.core.api.espn.com/v2/sports/soccer/leagues/eng.1"
+// keeps every allocation inside the budget the rest of the firmware uses. Both
+// competitions share the same document layout, so only the league slug differs.
+#define LFC_CORE_API_BASE "https://sports.core.api.espn.com/v2/sports/soccer/leagues/"
+
+// The league path for a fixture: the Premier League and the Champions League
+// live under different slugs but answer the same core API.
+static const char *lfc_league_slug(lfc_competition_t competition)
+{
+    return competition == LFC_COMP_CL ? "uefa.champions" : "eng.1";
+}
 
 // One pass clears a whole backlog; the worker then waits out the cooldown.
 #define LFC_SYNC_MAX_FIXTURES 4U
@@ -75,7 +83,8 @@ static bool read_sides(const lfc_fixture_t *fixture, uint32_t *home, uint32_t *a
 {
     char url[LFC_SYNC_URL_LEN];
     snprintf(url, sizeof(url),
-             LFC_CORE_API "/events/%u/competitions/%u/competitors",
+             LFC_CORE_API_BASE "%s/events/%u/competitions/%u/competitors",
+             lfc_league_slug(fixture->competition),
              (unsigned)fixture->event_id, (unsigned)fixture->event_id);
     char *body = NULL;
     if (!sync_get(url, LFC_SYNC_COMPETITORS_LIMIT, &body)) return false;
@@ -84,11 +93,13 @@ static bool read_sides(const lfc_fixture_t *fixture, uint32_t *home, uint32_t *a
     return ok;
 }
 
-static bool read_score(uint32_t event_id, uint32_t team_id, int *goals)
+static bool read_score(lfc_competition_t competition, uint32_t event_id,
+                       uint32_t team_id, int *goals)
 {
     char url[LFC_SYNC_URL_LEN];
     snprintf(url, sizeof(url),
-             LFC_CORE_API "/events/%u/competitions/%u/competitors/%u/score",
+             LFC_CORE_API_BASE "%s/events/%u/competitions/%u/competitors/%u/score",
+             lfc_league_slug(competition),
              (unsigned)event_id, (unsigned)event_id, (unsigned)team_id);
     char *body = NULL;
     if (!sync_get(url, LFC_SYNC_SCORE_LIMIT, &body)) return false;
@@ -105,7 +116,9 @@ static bool read_result(const lfc_fixture_t *fixture, lfc_sync_event_t *event)
     if (!read_sides(fixture, &home_team, &away_team)) return false;
 
     char url[LFC_SYNC_URL_LEN];
-    snprintf(url, sizeof(url), LFC_CORE_API "/events/%u/competitions/%u/status",
+    snprintf(url, sizeof(url),
+             LFC_CORE_API_BASE "%s/events/%u/competitions/%u/status",
+             lfc_league_slug(fixture->competition),
              (unsigned)fixture->event_id, (unsigned)fixture->event_id);
     char *body = NULL;
     if (!sync_get(url, LFC_SYNC_STATUS_LIMIT, &body)) return false;
@@ -117,8 +130,8 @@ static bool read_result(const lfc_fixture_t *fixture, lfc_sync_event_t *event)
     uint32_t ours = fixture->home ? home_team : away_team;
     uint32_t theirs = fixture->home ? away_team : home_team;
     int our_goals = -1, their_goals = -1;
-    if (!read_score(fixture->event_id, ours, &our_goals)) return false;
-    if (!read_score(fixture->event_id, theirs, &their_goals)) return false;
+    if (!read_score(fixture->competition, fixture->event_id, ours, &our_goals)) return false;
+    if (!read_score(fixture->competition, fixture->event_id, theirs, &their_goals)) return false;
 
     event->completed = true;
     event->home_goals = fixture->home ? our_goals : their_goals;
@@ -132,7 +145,8 @@ static bool read_result(const lfc_fixture_t *fixture, lfc_sync_event_t *event)
 static void read_kickoff(const lfc_fixture_t *fixture, lfc_sync_event_t *event)
 {
     char url[LFC_SYNC_URL_LEN];
-    snprintf(url, sizeof(url), LFC_CORE_API "/events/%u", (unsigned)fixture->event_id);
+    snprintf(url, sizeof(url), LFC_CORE_API_BASE "%s/events/%u",
+             lfc_league_slug(fixture->competition), (unsigned)fixture->event_id);
     char *body = NULL;
     if (!sync_get(url, LFC_SYNC_EVENT_LIMIT, &body)) return;
     int64_t kickoff = 0;

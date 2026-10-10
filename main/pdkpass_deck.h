@@ -23,8 +23,9 @@ typedef struct {
     pdkpass_deck_kind_t kind;
 } pdkpass_deck_entry_t;
 
-// A 24-round season next to a 40-fixture season fits with room to spare.
-#define PDKPASS_DECK_MAX 64U
+// A 24-round Formula 1 season next to a 46-fixture season (38 Premier League
+// plus 8 Champions League) fits with room to spare.
+#define PDKPASS_DECK_MAX 80U
 
 typedef struct {
     pdkpass_deck_entry_t entries[PDKPASS_DECK_MAX];

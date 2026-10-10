@@ -168,11 +168,14 @@ reminder ringtone.
 ## Liverpool fixtures
 
 The dashboard is one merged timeline. Every Formula 1 round and every Liverpool
-Premier League fixture is a card on the same carousel, ordered by when it
-happens: 23 rounds and 38 matches, 61 cards in all. Up and down step through
+fixture — both the Premier League season and the Champions League league phase —
+is a card on the same carousel, ordered by when it happens: 23 rounds plus 38
+Premier League matches and 8 Champions League matches. Up and down step through
 them, and holding the arrows still opens the driver and team standings. The
 counter under the card counts within the competition that card belongs to, so a
-Formula 1 round reads `16 / 23` while a Liverpool match reads `6 / 38`.
+Formula 1 round reads `16 / 23`, a Premier League match `6 / 38` and a Champions
+League match `3 / 8`. The card and detail page name the competition too: `PL R6`
+for a Premier League matchday and `CL MD3` for a league-phase matchday.
 
 On boot the carousel parks on the event that is next, so the device opens on
 whatever happens first rather than on a fixed card. OK opens the detail page for
@@ -191,9 +194,10 @@ The fixture snapshot is compiled into the firmware, so the list works with no
 network at all. Once Wi-Fi is connected and the clock has synchronized, a
 background refresh re-checks each match whose window has closed and saves any
 changed result or moved kick-off. It reads ESPN's public core API in small
-per-resource documents; the larger scoreboard and summary documents are avoided
-because the firmware's HTTP client cannot decompress gzip. A pass checks at most
-four matches and no more often than every six hours.
+per-resource documents, hitting both the Premier League (`eng.1`) and the
+Champions League (`uefa.champions`) leagues; the larger scoreboard and summary
+documents are avoided because the firmware's HTTP client cannot decompress gzip.
+A pass checks at most four matches and no more often than every six hours.
 
 When alerts are on, a Liverpool match rings ten minutes before kick-off through
 the same notice, sound and 15-second timeout as a session reminder. Like the

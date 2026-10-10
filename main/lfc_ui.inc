@@ -76,10 +76,46 @@ static int split_words(const char *text, const lv_font_t *font, int available,
 // `HOME`/`AWAY` rows -- and a name that overruns one line breaks onto a second
 // one between words, still centred. Two lines hold every Premier League club and
 // clear whatever sits below.
+//
+// The Champions League brings one name no number of lines can hold:
+// `Internazionale` is a single 14-character word against the twelve the face
+// fits, and a word cannot break. The row falls back to the body face for that
+// name -- ten pixels a character holds it whole on one line -- which is the
+// smaller size class the rule above avoids, but a clipped name is worse than a
+// small one and it is the only club in either competition that needs it.
+static bool words_exceed(const char *text, const lv_font_t *font, int available)
+{
+    lv_point_t size;
+    size_t start = 0;
+    for (size_t i = 0;; i++) {
+        if (text[i] != '\0' && text[i] != ' ') continue;
+        if (i > start) {
+            char word[LFC_OPPONENT_LEN];
+            size_t length = i - start;
+            if (length >= sizeof(word)) length = sizeof(word) - 1U;
+            memcpy(word, text + start, length);
+            word[length] = '\0';
+            lv_text_get_size(&size, word, font, 0, 0, LV_COORD_MAX,
+                             LV_TEXT_FLAG_NONE);
+            if (size.x > available) return true;
+        }
+        if (text[i] == '\0') return false;
+        start = i + 1U;
+    }
+}
+
 static void render_fixture_opponent(const char *name, int y, uint32_t ink)
 {
+    const int available = INNER_W - 6;
+    if (words_exceed(name, &lv_font_unscii_16, available)) {
+        char text[LFC_OPPONENT_LEN + 4];
+        split_words(name, &pdkpass_body_font, available, text, sizeof(text));
+        make_center_label(s_content, text, 0, y, INNER_W, &pdkpass_body_font,
+                          ink);
+        return;
+    }
     char text[LFC_OPPONENT_LEN + 4];
-    split_words(name, &lv_font_unscii_16, INNER_W - 6, text, sizeof(text));
+    split_words(name, &lv_font_unscii_16, available, text, sizeof(text));
     make_center_label(s_content, text, 0, y, INNER_W, &lv_font_unscii_16, ink);
 }
 
@@ -115,12 +151,26 @@ static void lfc_set_status(uint32_t background)
                                                                 : background);
 }
 
+// Competition label for a fixture: the Premier League matchday or the
+// Champions League league-phase matchday, so a card never borrows the other
+// competition's naming.
+static const char *lfc_competition_label(const lfc_fixture_t *fixture,
+                                         char *out, size_t capacity)
+{
+    if (fixture->competition == LFC_COMP_CL)
+        snprintf(out, capacity, "CL MD%u", fixture->round);
+    else
+        snprintf(out, capacity, "PL R%u", fixture->round);
+    return out;
+}
+
 // One dashboard card for a Liverpool fixture, laid out exactly like the Formula
 // 1 card: matchday and side, the opponent, then the result once the match is
-// complete or the Beijing kick-off while it is still ahead. `position` and
-// `total` count within the Premier League season alone, so this card reads
-// "6 / 38" instead of borrowing the merged deck's extent.
-static void render_home_match(size_t index, size_t position, size_t total)
+// complete or the Beijing kick-off while it is still ahead. The counter counts
+// within the fixture's own competition, so a Premier League card reads "6 / 38"
+// and a Champions League card "3 / 8" instead of borrowing the merged deck's
+// extent.
+static void render_home_match(size_t index)
 {
     if (index >= lfc_table_count()) return;
     const lfc_fixture_t *fixture = &lfc_table()[index];
@@ -133,7 +183,7 @@ static void render_home_match(size_t index, size_t position, size_t total)
     content_reset(theme.top, theme.bottom);
 
     char round[10];
-    snprintf(round, sizeof(round), "PL R%u", fixture->round);
+    lfc_competition_label(fixture, round, sizeof(round));
     make_zoom_label(s_content, round, 0, 3, INNER_W, top_ink);
     make_fit_zoom_label(s_content, fixture->home ? "HOME" : "AWAY", 0, 35,
                         INNER_W, top_ink);
@@ -154,6 +204,9 @@ static void render_home_match(size_t index, size_t position, size_t total)
     snprintf(s_home_session_text, sizeof(s_home_session_text), "%s", line);
     make_medium_label(card, line, 0, -2, 188, base_ink);
 
+    size_t total = fixture->competition == LFC_COMP_CL ? LFC_CL_MATCHDAYS
+                                                       : LFC_PL_MATCHDAYS;
+    size_t position = (size_t)fixture->round - 1U;
     char page[20];
     snprintf(page, sizeof(page), "%u / %u", (unsigned)(position + 1U),
              (unsigned)total);
@@ -174,7 +227,7 @@ static void render_lfc_detail(void)
     uint32_t top_ink = contrast_color(theme.top);
     uint32_t base_ink = contrast_color(theme.bottom);
     char title[12];
-    snprintf(title, sizeof(title), "PL R%02u", fixture->round);
+    lfc_competition_label(fixture, title, sizeof(title));
     set_title(title);
     lfc_set_status(theme.top);
     ui_pixel_screen_set_theme(s_screen, theme.top, theme.bottom);
@@ -325,7 +378,10 @@ static void render_lfc_reminder(void)
     reminder_label(s_reminder_layer, fixture->opponent, 75, 206,
                    &lv_font_unscii_16, 448, readable_text_color(background));
     char line[40];
-    snprintf(line, sizeof(line), "MATCHDAY %u", fixture->round);
+    if (fixture->competition == LFC_COMP_CL)
+        snprintf(line, sizeof(line), "CL MD %u", fixture->round);
+    else
+        snprintf(line, sizeof(line), "MATCHDAY %u", fixture->round);
     reminder_label(s_reminder_layer, line, 101, 204,
                    &pdkpass_body_font, 256, readable_text_color(background));
 

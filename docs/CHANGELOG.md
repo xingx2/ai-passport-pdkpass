@@ -6,13 +6,32 @@
 
 ## Unreleased
 
-- Rename the two top headers and put the Premier League on the settings screen. The settings page reads `SETTINGS` with `OPTIONS` on its status line, and the Formula 1 dashboard title and the Wi-Fi setup pages read `FORMULA 1` where they used to say `PDKPASS`. The sync block gains a `PL` row showing the Beijing date the Liverpool fixture table last came back from ESPN, and OK on a Liverpool fixture detail requests that refresh immediately instead of leaving the page — holding OK still returns to the dashboard. That key is advertised like the Formula 1 pages advertise their sync, whatever the radio is doing, and the footer then reports what happened: `NEED WIFI + CLOCK`, `REFRESHING...`, `FIXTURES UPDATED`, `NO NEW DATA` or `REFRESH FAILED`. Hiding the key whenever the clock was still settling made it look absent rather than unavailable, and an unchanged result left the press with no visible effect at all.
+- Rename the two top headers and put the Liverpool sync on the settings screen. The settings page reads `SETTINGS` with `OPTIONS` on its status line, and the Formula 1 dashboard title and the Wi-Fi setup pages read `FORMULA 1` where they used to say `PDKPASS`. The sync block gains a `PL` row showing the Beijing date the Liverpool fixture table (Premier League and Champions League together) last came back from ESPN, and OK on a Liverpool fixture detail requests that refresh immediately instead of leaving the page — holding OK still returns to the dashboard. That key is advertised like the Formula 1 pages advertise their sync, whatever the radio is doing, and the footer then reports what happened: `NEED WIFI + CLOCK`, `REFRESHING...`, `FIXTURES UPDATED`, `NO NEW DATA` or `REFRESH FAILED`. Hiding the key whenever the clock was still settling made it look absent rather than unavailable, and an unchanged result left the press with no visible effect at all.
 
 - Fit the `SETTINGS` rows and the club and venue names on both the merged-dashboard cards and the fixture detail so nothing is clipped or mismatched. The five sync lines run on a 13-pixel pitch and the five action cards on a 21-pixel pitch, which keeps the trailing `BACK` row inside the panel, and the `KEY SOUND: ON/OFF` row takes a face that holds it whole. A club name that overruns one line keeps the 16-pixel face its neighbouring rows use and breaks onto a second line between words, so `Manchester City` and `Brighton & Hove Albion` stay in the same size class as the rows above them instead of shrinking into a smaller face. The fixture detail used to fit the name with a transform instead, which made `Arsenal` about twice the size of `Crystal Palace` on the same page; it now takes the same one-face rule as the card. The venue line takes that rule too: `Coventry Building Society Arena`, the longest ground in the season, was squeezed to fit the row with a transform, and that transform asked the refresh for the whole label as a single 39 KB buffer — more than the 64 KB pool can be relied on to hand over once the page around it is up, which left the display retrying the same draw for ever instead of settling. Breaking the ground between words costs a second line and asks for no layer at all. Nothing is squeezed with a transform, because a scaled label costs an extra render layer on the 64 KB LVGL pool, and the line break is measured by the renderer rather than left to LVGL's wrapper, which never settles on the detail page's layout.
 
-- Merge the Liverpool fixtures into the dashboard: the Formula 1 rounds and all 38 Premier League matches become one timeline of 61 cards ordered by when they happen, so the arrow keys walk rounds and matches together; the counter under each card counts within that card's own competition (`16 / 23` on a Formula 1 round, `6 / 38` on a Liverpool match) rather than the merged deck. The carousel parks on the next event on boot instead of a fixed card, and OK opens the card's own detail page — the round's sessions and results on a Formula 1 card, the fixture detail (home or away, opponent, venue, Beijing kick-off and the final score once played) on a Liverpool card. Background colours come from the clubs themselves: Liverpool red at Anfield, the opponent's primary colour away, each with a readable text colour.
+- Merge the Liverpool fixtures into the dashboard: the Formula 1 rounds, all 38
+  Premier League matches and the 8 Champions League league-phase matches become
+  one timeline ordered by when they happen, so the arrow keys walk rounds and
+  matches together; the counter under each card counts within that card's own
+  competition (`16 / 23` on a Formula 1 round, `6 / 38` on a Premier League
+  match, `3 / 8` on a Champions League match) rather than the merged deck, and
+  the card and detail page name the competition (`PL R6` against `CL MD3`). The
+  carousel parks on the next event on boot instead of a fixed card, and OK opens
+  the card's own detail page — the round's sessions and results on a Formula 1
+  card, the fixture detail (home or away, opponent, venue, Beijing kick-off and
+  the final score once played) on a Liverpool card. Background colours come from
+  the clubs themselves: Liverpool red at Anfield, the opponent's primary colour
+  away, each with a readable text colour.
 
-- Refresh the Liverpool fixtures from ESPN's public core API once Wi-Fi and a synchronized clock are available. Only matches whose window has closed are re-checked, at most four per pass and no more often than every six hours; changed results and moved kick-offs are persisted and repaint the Liverpool views without a restart. The refresh reads the API's small per-resource documents because the firmware's HTTP client cannot decompress gzip and the scoreboard/summary documents run to tens of kilobytes.
+- Refresh the Liverpool fixtures from ESPN's public core API once Wi-Fi and a
+  synchronized clock are available, covering both the Premier League (`eng.1`)
+  and the Champions League (`uefa.champions`). Only matches whose window has
+  closed are re-checked, at most four per pass and no more often than every six
+  hours; changed results and moved kick-offs are persisted and repaint the
+  Liverpool views without a restart. The refresh reads the API's small
+  per-resource documents because the firmware's HTTP client cannot decompress
+  gzip and the scoreboard/summary documents run to tens of kilobytes.
 
 - Ring ten minutes before a Liverpool kick-off when alerts are on, reusing the session reminder's notice, sound, 15-second timeout and dark-display wake. Alerts stay gated on a synchronized clock so a restored estimate cannot ring early, and holding OK on the dashboard still opens `SETTINGS` as before.
 

@@ -723,14 +723,18 @@ int main(void)
         simulator_send_button(BSP_BTN_OK,BSP_BTN_CLICK);
         assert(!find_label(lv_screen_active(), "ALERTS: ON"));
         check_memory();
-        // The dashboard is one merged timeline: the 23 Formula 1 rounds and the
-        // 38 Liverpool fixtures in the order they happen. The counter stays per
-        // competition, so it reads "n / 23" or "n / 38" and never "n / 61".
+        // The dashboard is one merged timeline: the Formula 1 rounds and the
+        // Liverpool fixtures (Premier League and Champions League) in the order
+        // they happen. The counter stays per competition, so it reads "n / 23",
+        // "n / 38" or "n / 8" and never the merged deck's extent.
+        const unsigned deck_size =
+            (unsigned)(pdkpass_race_count + lfc_fixture_count);
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW") ||
                find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
         assert(find_label_containing(lv_screen_active(), " / 23") ||
-               find_label_containing(lv_screen_active(), " / 38"));
-        assert(!find_label_containing(lv_screen_active(), " / 61"));
+               find_label_containing(lv_screen_active(), " / 38") ||
+               find_label_containing(lv_screen_active(), " / 8"));
+        assert(!find_label_containing(lv_screen_active(), " / 69"));
         check_memory();
         // A full loop over the merged deck returns to the card it started on.
         simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK); // enter browsing
@@ -738,7 +742,7 @@ int main(void)
         assert(counter);
         char landing[16];
         snprintf(landing, sizeof(landing), "%s", lv_label_get_text(counter));
-        for (unsigned i = 0; i < 61; ++i)
+        for (unsigned i = 0; i < deck_size; ++i)
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         counter = find_label_containing(lv_screen_active(), " / ");
         assert(counter && strcmp(landing, lv_label_get_text(counter)) == 0);
@@ -750,7 +754,7 @@ int main(void)
         lv_area_t deck_limits;
         lv_obj_get_content_coords(deck_panel, &deck_limits);
         bool brighton_seen = false, fulham_seen = false;
-        for (unsigned i = 0; i < 61; ++i) {
+        for (unsigned i = 0; i < deck_size; ++i) {
             check_body_text(lv_screen_active());
             check_labels_within(deck_panel, &deck_limits);
             lv_obj_t *opponent =
@@ -781,11 +785,14 @@ int main(void)
         // Both card kinds are reachable, and each opens its own detail page: a
         // Liverpool card opens the fixture, a Formula 1 card the round detail.
         for (unsigned i = 0;
-             i < 61 && !find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"); ++i)
+             i < deck_size && !find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"); ++i)
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:MATCH"));
-        // A Liverpool card counts the Premier League season, not the deck.
-        assert(find_label_containing(lv_screen_active(), " / 38"));
+        // A Liverpool card counts its own competition, not the deck. The first
+        // match card up may be a Premier League or a Champions League fixture,
+        // so accept either counter.
+        assert(find_label_containing(lv_screen_active(), " / 38") ||
+               find_label_containing(lv_screen_active(), " / 8"));
         // The fixture page advertises the manual ESPN refresh from the start,
         // exactly like the Formula 1 detail pages: hiding it while the clock was
         // still settling made the key look absent rather than unavailable, and
@@ -799,11 +806,11 @@ int main(void)
         // Every club keeps one face here too. Fitting the name with a transform
         // made `ARSENAL` double size and `CRYSTAL PALACE` small, so the two read
         // as different ranks of information on the same page. Step through the
-        // whole season and check the named clubs as they come up.
+        // whole merged season and check the named clubs as they come up.
         bool arsenal_seen = false, palace_seen = false, brighton_seen_here = false;
         bool coventry_seen = false;
         static const char *const clubs[] = {"Arsenal", "Crystal", "Brighton"};
-        for (unsigned i = 0; i < 38; i++) {
+        for (unsigned i = 0; i < lfc_fixture_count; i++) {
             for (unsigned c = 0; c < 3; c++) {
                 lv_obj_t *club =
                     find_label_containing(lv_screen_active(), clubs[c]);
@@ -831,6 +838,10 @@ int main(void)
             }
             if (find_label_containing(lv_screen_active(), "Arsenal"))
                 save_detail_preview("pl-detail-arsenal.png");
+            if (find_label_containing(lv_screen_active(), "Atletico"))
+                save_detail_preview("cl-detail-atletico.png");
+            if (find_label(lv_screen_active(), "Internazionale"))
+                save_detail_preview("cl-detail-inter.png");
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         }
         assert(arsenal_seen && palace_seen && brighton_seen_here);
@@ -838,7 +849,7 @@ int main(void)
         simulator_send_button(BSP_BTN_OK,BSP_BTN_LONG); // -> dashboard
         check_memory();
         for (unsigned i = 0;
-             i < 61 && !find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"); ++i)
+             i < deck_size && !find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"); ++i)
             simulator_send_button(BSP_BTN_DOWN,BSP_BTN_CLICK);
         assert(find_label(lv_screen_active(), "UP/DN:CARD OK:VIEW"));
         // A Formula 1 card counts the 23-round season, not the deck.

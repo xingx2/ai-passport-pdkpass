@@ -979,10 +979,11 @@ static void render_home(void)
     }
     s_home_shown = s_state.home_card;
     // The carousel is one merged timeline, but the counter is not: each card
-    // counts within its own competition, so a Formula 1 card reads "n / 23" and
-    // a Liverpool card "n / 38". The deck position is deliberately not shown.
+    // counts within its own competition, so a Formula 1 card reads "n / 24" and
+    // a Liverpool card reads "n / 38" (Premier League) or "n / 8" (Champions
+    // League). The deck position is deliberately not shown.
     if (entry->kind == PDKPASS_DECK_MATCH)
-        render_home_match(entry->index, entry->index, lfc_table_count());
+        render_home_match(entry->index);
     else
         render_home_race(entry->index, entry->index, s_season.race_count);
     home_arm_clock();

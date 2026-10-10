@@ -9,7 +9,10 @@
 
 #define LFC_NAMESPACE "pdk_lfc"
 #define LFC_FIXTURES_MAGIC 0x50444C58U // "PDLX"
-#define LFC_FIXTURES_VERSION 1U
+// Bumped to 2 when lfc_fixture_t gained the `competition` field, so a cached
+// Premier-League-only snapshot from an older firmware is rejected and the
+// bundled (merged) snapshot takes over instead of being misread.
+#define LFC_FIXTURES_VERSION 2U
 #define LFC_FIXTURES_KEY "fixtures"
 
 static const char *TAG = "pdkpass_lfc";

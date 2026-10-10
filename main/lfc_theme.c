@@ -7,24 +7,33 @@ typedef struct {
     uint32_t color;
 } lfc_team_color_t;
 
-// Signature colours for the 2026-27 Premier League clubs. `lfc_team_color`
-// matches on the ESPN display name used by the bundled snapshot. Clubs whose
-// home kit is white (Fulham, Tottenham, Leeds) use the dark accent from the
-// same kit so the themed background keeps carrying the page text.
+// Signature colours for the 2026-27 Premier League and Champions League clubs.
+// `lfc_team_color` matches on the ESPN display name used by the bundled
+// snapshot. Clubs whose home kit is white (Fulham, Tottenham, Leeds) use the
+// dark accent from the same kit so the themed background keeps carrying the
+// page text; the Champions League opponents keep the same rule (LASK Linz
+// plays in black and white, so its dark shirt is the accent).
 static const lfc_team_color_t s_team_colors[] = {
     { "Arsenal",                0xEF0107U },
     { "Aston Villa",            0x670E36U },
     { "AFC Bournemouth",        0xDA291CU },
+    { "Atletico Madrid",        0xCB3524U },
     { "Brentford",              0xE30613U },
     { "Brighton & Hove Albion", 0x0057B8U },
     { "Chelsea",                0x034694U },
+    { "Club Brugge",            0x0051A0U },
     { "Coventry City",          0x2E7FB8U },
     { "Crystal Palace",         0x1B458FU },
     { "Everton",                0x003399U },
+    { "FC Porto",               0x00428CU },
+    { "Fenerbahce",             0x1F2A5AU },
     { "Fulham",                 0x1B1B1BU },
     { "Hull City",              0xC86A00U },
+    { "Internazionale",         0x0068A8U },
     { "Ipswich Town",           0x3A64A3U },
+    { "LASK Linz",              0x1A1A1AU },
     { "Leeds United",           0x1D428AU },
+    { "Lens",                   0xD4282CU },
     { "Liverpool",              LFC_RED },
     { "Manchester City",        0x2F87C2U },
     { "Manchester United",      0xDA020EU },
@@ -32,6 +41,7 @@ static const lfc_team_color_t s_team_colors[] = {
     { "Nottingham Forest",      0xDD0000U },
     { "Sunderland",             0xEB172BU },
     { "Tottenham Hotspur",      0x132257U },
+    { "Villarreal",             0x9A7B00U },
 };
 
 static uint32_t darken(uint32_t color)
